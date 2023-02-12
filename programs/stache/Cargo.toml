@@ -17,3 +17,7 @@ default = []
 
 [dependencies]
 anchor-lang = "0.26.0"
+anchor-spl = "0.26.0"
+spl-associated-token-account = "1.1.2"
+keychain = { path = "../../../keychain/programs/keychain", features = ["cpi"] }
+

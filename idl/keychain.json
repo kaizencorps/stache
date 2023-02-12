@@ -1,0 +1,530 @@
+{
+   "version": "0.1.0",
+   "name": "keychain",
+   "instructions": [
+   {
+      "name": "createDomain",
+      "accounts": [
+         {
+            "name": "domain",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "domainState",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "authority",
+            "isMut": true,
+            "isSigner": true
+         },
+         {
+            "name": "systemProgram",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "treasury",
+            "isMut": false,
+            "isSigner": false
+         }
+      ],
+      "args": [
+         {
+            "name": "name",
+            "type": "string"
+         },
+         {
+            "name": "keychainCost",
+            "type": "u64"
+         }
+      ]
+   },
+   {
+      "name": "closeAccount",
+      "accounts": [
+         {
+            "name": "authority",
+            "isMut": true,
+            "isSigner": true
+         },
+         {
+            "name": "account",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "program",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "programData",
+            "isMut": false,
+            "isSigner": false
+         }
+      ],
+      "args": []
+   },
+   {
+      "name": "createKeychain",
+      "accounts": [
+         {
+            "name": "keychain",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "keychainState",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "key",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "domain",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "wallet",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "authority",
+            "isMut": true,
+            "isSigner": true
+         },
+         {
+            "name": "systemProgram",
+            "isMut": false,
+            "isSigner": false
+         }
+      ],
+      "args": [
+         {
+            "name": "keychainName",
+            "type": "string"
+         }
+      ]
+   },
+   {
+      "name": "createKeychainV1",
+      "accounts": [
+         {
+            "name": "keychain",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "keychainState",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "key",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "domain",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "wallet",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "authority",
+            "isMut": true,
+            "isSigner": true
+         },
+         {
+            "name": "systemProgram",
+            "isMut": false,
+            "isSigner": false
+         }
+      ],
+      "args": [
+         {
+            "name": "keychainName",
+            "type": "string"
+         }
+      ]
+   },
+   {
+      "name": "upgradeKeychain",
+      "accounts": [
+         {
+            "name": "user",
+            "isMut": true,
+            "isSigner": true
+         },
+         {
+            "name": "keychain",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "keychainState",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "systemProgram",
+            "isMut": false,
+            "isSigner": false
+         }
+      ],
+      "args": []
+   },
+   {
+      "name": "addKey",
+      "accounts": [
+         {
+            "name": "keychain",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "domain",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "authority",
+            "isMut": true,
+            "isSigner": true
+         }
+      ],
+      "args": [
+         {
+            "name": "pubkey",
+            "type": "publicKey"
+         }
+      ]
+   },
+   {
+      "name": "verifyKey",
+      "accounts": [
+         {
+            "name": "keychain",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "key",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "userKey",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "authority",
+            "isMut": true,
+            "isSigner": true
+         },
+         {
+            "name": "domain",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "treasury",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "systemProgram",
+            "isMut": false,
+            "isSigner": false
+         }
+      ],
+      "args": []
+   },
+   {
+      "name": "removeKey",
+      "accounts": [
+         {
+            "name": "keychain",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "key",
+            "isMut": true,
+            "isSigner": false,
+            "isOptional": true
+         },
+         {
+            "name": "keychainState",
+            "isMut": true,
+            "isSigner": false
+         },
+         {
+            "name": "domain",
+            "isMut": false,
+            "isSigner": false
+         },
+         {
+            "name": "authority",
+            "isMut": true,
+            "isSigner": true
+         },
+         {
+            "name": "treasury",
+            "isMut": true,
+            "isSigner": false
+         }
+      ],
+      "args": [
+         {
+            "name": "pubkey",
+            "type": "publicKey"
+         }
+      ]
+   }
+],
+   "accounts": [
+   {
+      "name": "CurrentKeyChain",
+      "type": {
+         "kind": "struct",
+         "fields": [
+            {
+               "name": "name",
+               "type": "string"
+            },
+            {
+               "name": "numKeys",
+               "type": "u16"
+            },
+            {
+               "name": "domain",
+               "type": "publicKey"
+            },
+            {
+               "name": "bump",
+               "type": "u8"
+            },
+            {
+               "name": "keys",
+               "type": {
+                  "vec": {
+                     "defined": "UserKey"
+                  }
+               }
+            }
+         ]
+      }
+   },
+   {
+      "name": "KeyChainV1",
+      "type": {
+         "kind": "struct",
+         "fields": [
+            {
+               "name": "numKeys",
+               "type": "u16"
+            },
+            {
+               "name": "domain",
+               "type": "publicKey"
+            },
+            {
+               "name": "keys",
+               "type": {
+                  "vec": {
+                     "defined": "UserKey"
+                  }
+               }
+            }
+         ]
+      }
+   },
+   {
+      "name": "KeyChainKey",
+      "type": {
+         "kind": "struct",
+         "fields": [
+            {
+               "name": "keychain",
+               "type": "publicKey"
+            },
+            {
+               "name": "key",
+               "type": "publicKey"
+            }
+         ]
+      }
+   },
+   {
+      "name": "CurrentDomain",
+      "type": {
+         "kind": "struct",
+         "fields": [
+            {
+               "name": "name",
+               "type": "string"
+            },
+            {
+               "name": "authority",
+               "type": "publicKey"
+            },
+            {
+               "name": "treasury",
+               "type": "publicKey"
+            },
+            {
+               "name": "keychainCost",
+               "type": "u64"
+            },
+            {
+               "name": "bump",
+               "type": "u8"
+            }
+         ]
+      }
+   },
+   {
+      "name": "KeyChainState",
+      "type": {
+         "kind": "struct",
+         "fields": [
+            {
+               "name": "keychainVersion",
+               "type": "u8"
+            },
+            {
+               "name": "keyVersion",
+               "type": "u8"
+            },
+            {
+               "name": "keychain",
+               "type": "publicKey"
+            }
+         ]
+      }
+   },
+   {
+      "name": "DomainState",
+      "type": {
+         "kind": "struct",
+         "fields": [
+            {
+               "name": "version",
+               "type": "u8"
+            },
+            {
+               "name": "domain",
+               "type": "publicKey"
+            }
+         ]
+      }
+   }
+],
+   "types": [
+   {
+      "name": "UserKey",
+      "type": {
+         "kind": "struct",
+         "fields": [
+            {
+               "name": "key",
+               "type": "publicKey"
+            },
+            {
+               "name": "verified",
+               "type": "bool"
+            }
+         ]
+      }
+   }
+],
+   "errors": [
+   {
+      "code": 6000,
+      "name": "NotEnoughSol",
+      "msg": "You don't have enough SOL"
+   },
+   {
+      "code": 6001,
+      "name": "IncorrectKeyAddress",
+      "msg": "The given key account is not the correct PDA for the given address"
+   },
+   {
+      "code": 6002,
+      "name": "KeyAlreadyExists",
+      "msg": "That key already exists"
+   },
+   {
+      "code": 6003,
+      "name": "MaxKeys",
+      "msg": "You cannot add any more keys on your keychain. Remove one first"
+   },
+   {
+      "code": 6004,
+      "name": "SignerNotInKeychain",
+      "msg": "You are not a valid signer for this keychain"
+   },
+   {
+      "code": 6005,
+      "name": "SignerNotKey",
+      "msg": "Verifier must be the same as the key being verified"
+   },
+   {
+      "code": 6006,
+      "name": "KeyNotFound",
+      "msg": "That key doesn't exist on this keychain"
+   },
+   {
+      "code": 6007,
+      "name": "NotDomainAdmin",
+      "msg": "Signer is not a domain admin"
+   },
+   {
+      "code": 6008,
+      "name": "NotSigner",
+      "msg": "Can only add wallet of signer"
+   },
+   {
+      "code": 6009,
+      "name": "NameTooLong",
+      "msg": "Name too long. Max 32 characters"
+   },
+   {
+      "code": 6010,
+      "name": "WrongTreasury",
+      "msg": "Wrong treasury account"
+   },
+   {
+      "code": 6011,
+      "name": "InvalidKeychainVersion",
+      "msg": "Wrong keychain version"
+   },
+   {
+      "code": 6012,
+      "name": "MissingKeyAccount",
+      "msg": "Missing required key account"
+   },
+   {
+      "code": 6013,
+      "name": "InvalidKeyAccount",
+      "msg": "Invalid Key account"
+   }
+],
+   "metadata": {
+   "address": "Key3oJGUxKaddvMRAKbyYVbE8Pf3ycrH8hyZxa7tVCo"
+}
+}

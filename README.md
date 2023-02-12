@@ -49,7 +49,7 @@ from the first one.
 
 ### Connecting to a Stache
 
-A user accesses his Stache via a single Stache-linked wallet. From here, the user is able to control assets in the Stache and 
+A user accesses his Stache via a single Stache-linked wallet, the same way he'd connect to any existing dapp. From here, the user is able to control assets in the Stache and 
 in the connected wallet. This means he can deposit assets from his connected wallet into the Stache, and he can withdraw assets
 from the Stache. He CAN NOT, however, control assets in other linked wallets.
 
@@ -60,3 +60,13 @@ and which was subsequently verified via a transaction submitted to the Stache by
 For the initial version of Stache (v1), the focus will be limited to the user’s direct experience and interaction with
 Stache and his/her associated wallets. Potential 3rd party dapp/service integration may be offered in a limited fashion
 but will be a secondary goal.
+
+# Disclaimer
+
+This code is unaudited and currently under heavy development. Use at your own risk. An immutable version probably won't be deployed for some time.
+
+The initial version will be released for the Grizzlython hackathon, but is meant to serve as a proof of concept and
+demonstration of the concepts presented here and in the presentation, more than anything else.
+
+# Todos
+- once code becomes more stable, keychain-style account upgrade mechanism
