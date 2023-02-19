@@ -4,4 +4,6 @@ use anchor_lang::prelude::*;
 pub enum StacheError {
     #[msg("Not authorized")]
     NotAuthorized,
+    #[msg("Invalid Stache ID")]
+    InvalidStacheId
 }

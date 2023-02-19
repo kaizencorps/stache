@@ -23,31 +23,51 @@ pub struct CreateStache<'info> {
         init,
         payer = authority,
         seeds = [keychain.name.as_bytes().as_ref(), BEARD_SPACE.as_bytes().as_ref(), keychain.domain.as_ref(), STACHE.as_bytes().as_ref()],
-        // not sure why this doesn't work
-        // bump = bump,
         bump,
-        space = 8 + Beard::MAX_SIZE,
+        space = 8 + CurrentStache::MAX_SIZE,
     )]
-    pub beard: Account<'info, Beard>,
+    pub stache: Account<'info, CurrentStache>,
 
     pub system_program: Program <'info, System>,
     pub keychain_program: Program<'info, Keychain>,
 
 }
 
+#[derive(Accounts)]
+pub struct DestroyStache<'info> {
+
+    // #[account(mut, owner = keychain_program.key)]
+    #[account(mut)]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+    mut,
+    // send lamports to the authority (must be on the keychain)
+    close = authority
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    pub system_program: Program <'info, System>,
+    pub keychain_program: Program<'info, Keychain>,
+}
+
+
 
 #[derive(Accounts)]
 pub struct Stash<'info> {
 
     #[account(mut)]
-    pub beard: Account<'info, Beard>,
+    pub stache: Account<'info, CurrentStache>,
 
     #[account(
         mut,
         associated_token::mint = mint,
-        associated_token::authority = beard
+        associated_token::authority = stache
     )]
-    pub beard_ata: Account<'info, TokenAccount>,
+    pub stache_ata: Account<'info, TokenAccount>,
     pub mint: Account<'info, Mint>,
 
     #[account(mut)]
@@ -66,14 +86,14 @@ pub struct Stash<'info> {
 pub struct Unstash<'info> {
 
     #[account(mut)]
-    pub beard: Account<'info, Beard>,
+    pub stache: Account<'info, CurrentStache>,
 
     #[account(
         mut,
         associated_token::mint = mint,
-        associated_token::authority = beard
+        associated_token::authority = stache
     )]
-    pub beard_ata: Account<'info, TokenAccount>,
+    pub stache_ata: Account<'info, TokenAccount>,
     pub mint: Account<'info, Mint>,
 
     #[account(mut)]

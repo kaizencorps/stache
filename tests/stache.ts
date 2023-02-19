@@ -9,7 +9,7 @@ import kcidl from "../idl/keychain.json";
 import {Keypair, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction} from "@solana/web3.js";
 import {
   createNFTMint, createTokenMint,
-  findBeardPda,
+  findStachePda,
   findDomainPda,
   findDomainStatePda,
   findKeychainKeyPda,
@@ -30,6 +30,7 @@ import {
   mintToChecked, TOKEN_PROGRAM_ID,
   transferChecked
 } from "@solana/spl-token";
+import {expect} from "chai";
 
 const KeychainIdl = kcidl as Idl;
 
@@ -78,8 +79,8 @@ describe("stache", () => {
   let mint: Keypair;
   let adminAta: PublicKey;
   let userAta: PublicKey;
-  let beardPda: PublicKey;
-  let beardPdaBump: number;
+  let stachePda: PublicKey;
+  let stachePdaBump: number;
 
   // for admin stuff
   const admin = anchor.web3.Keypair.generate();
@@ -178,27 +179,27 @@ describe("stache", () => {
 
   it("creates a stache", async () => {
 
-    [beardPda, beardPdaBump] = findBeardPda(username, domainPda, stacheProgram.programId);
+    [stachePda, stachePdaBump] = findStachePda(username, domainPda, stacheProgram.programId);
 
     let txid = await stacheProgram.methods.createStache().accounts({
-      beard: beardPda,
+      stache: stachePda,
       keychain: userKeychainPda,
       keychainProgram: keychainProgram.programId,
       systemProgram: SystemProgram.programId,
     }).rpc();
 
-    let beard = await stacheProgram.account.beard.fetch(beardPda);
-    console.log(`----> created stache for ${username} >>>> ${beardPda.toBase58()} <<<< bump: ${beard.bump} in tx: ${txid}`);
-    assert.equal(beard.name, username);
+    let stache = await stacheProgram.account.currentStache.fetch(stachePda);
+    console.log(`----> created stache for ${username} >>>> ${stachePda.toBase58()} <<<< bump: ${stache.bump} in tx: ${txid}`);
+    assert.equal(stache.stacheId, username);
   });
 
   it("basic stash/unstash", async () => {
 
-    const stacheMintAta  = getAssociatedTokenAddressSync(mint.publicKey, beardPda, true);
+    const stacheMintAta  = getAssociatedTokenAddressSync(mint.publicKey, stachePda, true);
 
     // stash: this tx will create the stache's mint ata and deposit some tokens in there
     let tx = new Transaction().add(
-        createAssociatedTokenAccountInstruction(provider.wallet.publicKey, stacheMintAta, beardPda, mint.publicKey),
+        createAssociatedTokenAccountInstruction(provider.wallet.publicKey, stacheMintAta, stachePda, mint.publicKey),
         createTransferCheckedInstruction(userAta, mint.publicKey, stacheMintAta, provider.wallet.publicKey, 100 * 1e9, 9)
     );
     let txid = await provider.sendAndConfirm(tx);
@@ -217,8 +218,8 @@ describe("stache", () => {
 
     // now let's stash via the stash instruction
     tx = await stacheProgram.methods.stash(new anchor.BN(500 * 1e9)).accounts({
-      beard: beardPda,
-      beardAta: stacheMintAta,
+      stache: stachePda,
+      stacheAta: stacheMintAta,
       mint: mint.publicKey,
       owner: provider.wallet.publicKey,
       fromToken: userAta,
@@ -238,8 +239,8 @@ describe("stache", () => {
     // unstash
 
     tx = await stacheProgram.methods.unstash(new anchor.BN(225 * 1e9)).accounts({
-      beard: beardPda,
-      beardAta: stacheMintAta,
+      stache: stachePda,
+      stacheAta: stacheMintAta,
       mint: mint.publicKey,
       owner: provider.wallet.publicKey,
       toToken: userAta,
@@ -255,7 +256,21 @@ describe("stache", () => {
     tokenAmount = await connection.getTokenAccountBalance(userAta);
     console.log(`new user ata balance: ${tokenAmount.value.uiAmount}`);
 
+  });
 
+  it("destroys a stache", async () => {
+    let tx = await stacheProgram.methods.destroyStache().accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      authority: provider.wallet.publicKey,
+      keychainProgram: keychainProgram.programId,
+      systemProgram: SystemProgram.programId,
+    }).rpc();
+
+    console.log(`destroyed stache for ${username} in tx: ${tx}`);
+
+    let stache = await stacheProgram.account.currentStache.fetchNullable(stachePda);
+    expect(stache).to.be.null;
   });
 
 });

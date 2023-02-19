@@ -122,7 +122,7 @@ export const findKeychainKeyPda = (walletAddress: PublicKey, domain: string, key
 
 
 ///// stache pda finders
-export const findBeardPda = (name: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
+export const findStachePda = (name: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
   return anchor.web3.PublicKey.findProgramAddressSync(
       [
         Buffer.from(anchor.utils.bytes.utf8.encode(name)),
