@@ -32,7 +32,7 @@ pub mod stache {
         require!(keychain.has_verified_key(&ctx.accounts.authority.key()), StacheError::NotAuthorized);
 
         // use the same name as the keychain
-        ctx.accounts.stache.stache_id = stache_id;
+        ctx.accounts.stache.stache_id = keychain.name.clone();
         ctx.accounts.stache.domain = keychain.domain.clone();
         ctx.accounts.stache.keychain = ctx.accounts.keychain.key();
         ctx.accounts.stache.bump = *ctx.bumps.get("stache").unwrap();
