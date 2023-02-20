@@ -31,9 +31,6 @@ pub mod stache {
         // check that the creator is on the keychain
         require!(keychain.has_verified_key(&ctx.accounts.authority.key()), StacheError::NotAuthorized);
 
-        let stache_id = keychain.name.clone().trim().to_lowercase();
-        require!(stache_id.len() <= 32, StacheError::InvalidStacheId);
-
         // use the same name as the keychain
         ctx.accounts.stache.stache_id = stache_id;
         ctx.accounts.stache.domain = keychain.domain.clone();
