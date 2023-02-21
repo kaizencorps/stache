@@ -10,15 +10,18 @@ pub mod error;
 pub mod account;
 pub mod constant;
 pub mod context;
+mod util;
 
 use error::*;
 use account::*;
 use constant::*;
 use context::*;
+use util::*;
 
 
 #[program]
 pub mod stache {
+    use anchor_spl::token::CloseAccount;
     use super::*;
 
     // creates the stache (beard) account
@@ -46,7 +49,8 @@ pub mod stache {
         require!(keychain.has_verified_key(&ctx.accounts.authority.key()), StacheError::NotAuthorized);
 
         // todo: needs to be a 2-sig thing for security
-        // todo: check for any stashes (token accounts) so they don't get orphaned
+        // todo: check for any stashes (token accounts)
+        // todo: check for vaults
 
         Ok(())
     }
@@ -99,6 +103,84 @@ pub mod stache {
 
         Ok(())
     }
+
+    pub fn create_vault(ctx: Context<CreateVault>, name: String, vault_type: VaultType) -> Result<()> {
+
+        let is_valid_name = is_valid_name(&name);
+        require!(is_valid_name, StacheError::InvalidName);
+
+        let stache = &mut ctx.accounts.stache;
+
+        // check that we've got room
+        require!(usize::from(stache.vaults.len()) < MAX_VAULTS, StacheError::MaxVaults);
+
+        // add the vault to the stache
+        stache.vaults.push(ctx.accounts.vault.key());
+
+        // setup the vault
+        let vault = &mut ctx.accounts.vault;
+
+        vault.stache = ctx.accounts.stache.key();
+        vault.name = name;
+        vault.vault_type = vault_type;
+        vault.bump = *ctx.bumps.get("vault").unwrap();
+
+        Ok(())
+
+    }
+
+    pub fn destroy_vault(ctx: Context<DestroyVault>) -> Result<()> {
+        let stache = &mut ctx.accounts.stache;
+        let tokens_left = ctx.accounts.vault_ata.amount;
+
+        let vault = &ctx.accounts.vault;
+
+        let seeds = &[
+            vault.name.as_bytes().as_ref(),
+            VAULT_SPACE.as_bytes().as_ref(),
+            stache.stache_id.as_bytes().as_ref(),
+            BEARD_SPACE.as_bytes().as_ref(),
+            stache.domain.as_ref(),
+            STACHE.as_bytes().as_ref(),
+            &[vault.bump],
+        ];
+
+        let signer = &[&seeds[..]];
+
+        let cpi_program = ctx.accounts.token_program.clone().to_account_info();
+
+        // drain the vault first
+        if (tokens_left > 0) {
+            let cpi_transfer_accounts = Transfer {
+                from: ctx.accounts.vault_ata.to_account_info(),
+                to: ctx.accounts.drain_to.to_account_info(),
+                authority: ctx.accounts.vault.to_account_info(),
+            };
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.clone().to_account_info(),
+                         cpi_transfer_accounts, signer);
+            token::transfer(cpi_ctx, tokens_left)?;
+            msg!("drained {} tokens from vault: {}, ata: {}", tokens_left, ctx.accounts.vault.key(), ctx.accounts.vault_ata.key());
+        }
+
+        // close the vault
+        let cpi_close_accounts = CloseAccount {
+            account: ctx.accounts.vault_ata.to_account_info(),
+            destination: ctx.accounts.drain_to.to_account_info(),
+            authority: ctx.accounts.vault.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.clone().to_account_info(),
+                                                  cpi_close_accounts, signer);
+        token::close_account(cpi_ctx)?;
+
+        // now get rid of the vault from stache
+        stache.remove_vault(&ctx.accounts.vault.key());
+
+        Ok(())
+    }
+
+
+
 }
 
 

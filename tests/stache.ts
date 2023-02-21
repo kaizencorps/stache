@@ -14,7 +14,7 @@ import {
   findDomainStatePda,
   findKeychainKeyPda,
   findKeychainPda,
-  findKeychainStatePda
+  findKeychainStatePda, findVaultPda
 } from "./utils";
 import * as assert from "assert";
 import {
@@ -25,6 +25,7 @@ import {
   createMintToCheckedInstruction,
   createTransferCheckedInstruction,
   createTransferCheckedWithFeeInstruction, createTransferInstruction,
+  getAccount,
   getAssociatedTokenAddress,
   getAssociatedTokenAddressSync,
   mintToChecked, TOKEN_PROGRAM_ID,
@@ -50,7 +51,8 @@ const deployKeychain = () => {
 };
 
 function randomName() {
-  return Math.random().toString(36).substring(2, 5) + Math.random().toString(36).substring(2, 5);
+  let name = Math.random().toString(36).substring(2, 5) + Math.random().toString(36).substring(2, 5);
+  return name.toLowerCase();
 }
 
 // for setting up the keychaink
@@ -60,9 +62,7 @@ const renameCost = new anchor.BN(anchor.web3.LAMPORTS_PER_SOL * 0.01);
 
 
 const username = randomName();    // used as the keychain + stache name
-
-
-
+const vaultName = randomName();
 
 
 describe("stache", () => {
@@ -81,6 +81,9 @@ describe("stache", () => {
   let userAta: PublicKey;
   let stachePda: PublicKey;
   let stachePdaBump: number;
+  let vaultPda: PublicKey;
+  let vaultPdaBump: number;
+  let vaultAta: PublicKey;
 
   // for admin stuff
   const admin = anchor.web3.Keypair.generate();
@@ -219,6 +222,7 @@ describe("stache", () => {
     // now let's stash via the stash instruction
     tx = await stacheProgram.methods.stash(new anchor.BN(500 * 1e9)).accounts({
       stache: stachePda,
+      keychain: userKeychainPda,
       stacheAta: stacheMintAta,
       mint: mint.publicKey,
       owner: provider.wallet.publicKey,
@@ -240,6 +244,7 @@ describe("stache", () => {
 
     tx = await stacheProgram.methods.unstash(new anchor.BN(225 * 1e9)).accounts({
       stache: stachePda,
+      keychain: userKeychainPda,
       stacheAta: stacheMintAta,
       mint: mint.publicKey,
       owner: provider.wallet.publicKey,
@@ -257,6 +262,72 @@ describe("stache", () => {
     console.log(`new user ata balance: ${tokenAmount.value.uiAmount}`);
 
   });
+
+  it('creates a vault', async () => {
+
+      [vaultPda, vaultPdaBump] = findVaultPda(vaultName, username, domainPda, stacheProgram.programId);
+      vaultAta  = getAssociatedTokenAddressSync(mint.publicKey, vaultPda, true);
+
+    let txid = await stacheProgram.methods.createVault(vaultName, {standard: {}}).accounts({
+        stache: stachePda,
+        keychain: userKeychainPda,
+        vault: vaultPda,
+        vaultAta: vaultAta,
+        mint: mint.publicKey,
+        authority: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      }).rpc();
+
+      console.log(`created vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
+
+      let userTokenBalance = await connection.getTokenAccountBalance(userAta);
+      console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
+
+      let tx = new Transaction().add(
+          createTransferCheckedInstruction(userAta, mint.publicKey, vaultAta, provider.wallet.publicKey, 5 * 1e9, 9)
+      );
+      txid = await provider.sendAndConfirm(tx);
+      console.log(`deposited 5 tokens into vault, txid: ${txid}`);
+      userTokenBalance = await connection.getTokenAccountBalance(userAta);
+      console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
+      let vaultTokenBalance = await connection.getTokenAccountBalance(vaultAta);
+      console.log(`vault token balance: ${vaultTokenBalance.value.uiAmount}`);
+
+  });
+
+  it('destroys a vault', async () => {
+
+    // now destroy the vault
+
+    let txid = await stacheProgram.methods.destroyVault().accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      vault: vaultPda,
+      vaultAta: vaultAta,
+      mint: mint.publicKey,
+      authority: provider.wallet.publicKey,
+      drainTo: userAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    }).rpc();
+
+    console.log(`destroyed vault ${vaultName} >>>> ${vaultPda} <<<< in tx: ${txid}`)
+
+    let userTokenBalance = await connection.getTokenAccountBalance(userAta);
+    console.log(`new user token balance after vault destruction: ${userTokenBalance.value.uiAmount}`);
+
+    // check that the vault is gone
+    let vault = await stacheProgram.account.vault.fetchNullable(vaultPda);
+    expect(vault).to.be.null;
+
+    // check that the vault ata is gone
+    let accountInfo = await provider.connection.getAccountInfo(vaultAta);
+    expect(vault).to.be.null;
+
+  });
+
 
   it("destroys a stache", async () => {
     let tx = await stacheProgram.methods.destroyStache().accounts({

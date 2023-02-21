@@ -19,6 +19,7 @@ export const KEY_SPACE = 'keys';
 
 export const STACHE = 'stache';
 export const BEARD_SPACE = 'beards';
+export const VAULT_SPACE = 'vaults';
 
 
 // taken from the keychain project
@@ -122,10 +123,25 @@ export const findKeychainKeyPda = (walletAddress: PublicKey, domain: string, key
 
 
 ///// stache pda finders
-export const findStachePda = (name: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
+
+export const findStachePda = (stacheId: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
   return anchor.web3.PublicKey.findProgramAddressSync(
       [
-        Buffer.from(anchor.utils.bytes.utf8.encode(name)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(stacheId)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(BEARD_SPACE)),
+        domainPda.toBuffer(),
+        Buffer.from(anchor.utils.bytes.utf8.encode(STACHE)),
+      ],
+      stacheprogid,
+  );
+};
+
+export const findVaultPda = (vaultName: string, stacheId: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
+  return anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode(vaultName)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(VAULT_SPACE)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(stacheId)),
         Buffer.from(anchor.utils.bytes.utf8.encode(BEARD_SPACE)),
         domainPda.toBuffer(),
         Buffer.from(anchor.utils.bytes.utf8.encode(STACHE)),
