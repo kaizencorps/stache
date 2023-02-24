@@ -11,7 +11,7 @@ pub struct CurrentStache {
     pub bump: u8,
     pub keychain: Pubkey,
     pub domain: Pubkey,
-    pub stache_id: String,
+    pub stacheid: String,
     // the keychain domain
     pub vaults: Vec<Pubkey>,
     // pub submitters: Vec<Submitter>,

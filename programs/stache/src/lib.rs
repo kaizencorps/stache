@@ -35,7 +35,7 @@ pub mod stache {
         require!(keychain.has_verified_key(&ctx.accounts.authority.key()), StacheError::NotAuthorized);
 
         // use the same name as the keychain
-        ctx.accounts.stache.stache_id = keychain.name.clone();
+        ctx.accounts.stache.stacheid = keychain.name.clone();
         ctx.accounts.stache.domain = keychain.domain.clone();
         ctx.accounts.stache.keychain = ctx.accounts.keychain.key();
         ctx.accounts.stache.bump = *ctx.bumps.get("stache").unwrap();
@@ -81,7 +81,7 @@ pub mod stache {
         //        seeds = [keychain.name.as_bytes().as_ref(), BEARD_SPACE.as_bytes().as_ref(), keychain.domain.as_ref(), STACHE.as_bytes().as_ref()]
 
         let seeds = &[
-            stache.stache_id.as_bytes().as_ref(),
+            stache.stacheid.as_bytes().as_ref(),
             BEARD_SPACE.as_bytes().as_ref(),
             stache.domain.as_ref(),
             STACHE.as_bytes().as_ref(),
@@ -138,7 +138,7 @@ pub mod stache {
         let seeds = &[
             vault.name.as_bytes().as_ref(),
             VAULT_SPACE.as_bytes().as_ref(),
-            stache.stache_id.as_bytes().as_ref(),
+            stache.stacheid.as_bytes().as_ref(),
             BEARD_SPACE.as_bytes().as_ref(),
             stache.domain.as_ref(),
             STACHE.as_bytes().as_ref(),
@@ -150,7 +150,7 @@ pub mod stache {
         let cpi_program = ctx.accounts.token_program.clone().to_account_info();
 
         // drain the vault first
-        if (tokens_left > 0) {
+        if tokens_left > 0 {
             let cpi_transfer_accounts = Transfer {
                 from: ctx.accounts.vault_ata.to_account_info(),
                 to: ctx.accounts.drain_to.to_account_info(),

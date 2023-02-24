@@ -136,7 +136,7 @@ pub struct CreateVault<'info> {
     #[account(
     init,
     payer = authority,
-    seeds = [name.as_bytes().as_ref(), VAULT_SPACE.as_bytes().as_ref(), stache.stache_id.as_bytes().as_ref(), BEARD_SPACE.as_bytes().as_ref(), stache.domain.as_ref(), STACHE.as_bytes().as_ref()],
+    seeds = [name.as_bytes().as_ref(), VAULT_SPACE.as_bytes().as_ref(), stache.stacheid.as_bytes().as_ref(), BEARD_SPACE.as_bytes().as_ref(), stache.domain.as_ref(), STACHE.as_bytes().as_ref()],
     bump,
     space = 8 + Vault::MAX_SIZE,
     )]

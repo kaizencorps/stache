@@ -193,7 +193,7 @@ describe("stache", () => {
 
     let stache = await stacheProgram.account.currentStache.fetch(stachePda);
     console.log(`----> created stache for ${username} >>>> ${stachePda.toBase58()} <<<< bump: ${stache.bump} in tx: ${txid}`);
-    assert.equal(stache.stacheId, username);
+    assert.equal(stache.stacheid, username);
   });
 
   it("basic stash/unstash", async () => {
