@@ -136,37 +136,53 @@ pub struct CreateVault<'info> {
     #[account(
     init,
     payer = authority,
-    seeds = [name.as_bytes().as_ref(), VAULT_SPACE.as_bytes().as_ref(), stache.stacheid.as_bytes().as_ref(), BEARD_SPACE.as_bytes().as_ref(), stache.domain.as_ref(), STACHE.as_bytes().as_ref()],
+    seeds = [&stache.next_vault_index.checked_add(1).unwrap().to_le_bytes(),
+             VAULT_SPACE.as_bytes().as_ref(),
+             stache.stacheid.as_bytes().as_ref(),
+             BEARD_SPACE.as_bytes().as_ref(),
+             stache.domain.as_ref(),
+             STACHE.as_bytes().as_ref()],
     bump,
     space = 8 + Vault::MAX_SIZE,
     )]
     pub vault: Account<'info, Vault>,
 
-    #[account(
-    init,
-    payer = authority,
-    associated_token::mint = mint,
-    associated_token::authority = vault
-    )]
-    pub vault_ata: Account<'info, TokenAccount>,
-
-    pub mint: Account<'info, Mint>,
-
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-
 }
+
+#[derive(Accounts)]
+pub struct LockVault<'info> {
+
+    #[account(
+    mut,
+    constraint = stache.is_vault(vault.index).is_some() @StacheError::InvalidVault,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    )]
+    pub vault: Account<'info, Vault>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
 
 #[derive(Accounts)]
 pub struct DestroyVault<'info> {
 
     #[account(
     mut,
-    constraint = stache.is_vault(&vault.key()).is_some() @StacheError::InvalidVault,
+    constraint = stache.is_vault(vault.index).is_some() @StacheError::InvalidVault,
     has_one = keychain,
     )]
     pub stache: Account<'info, CurrentStache>,
@@ -203,5 +219,104 @@ pub struct DestroyVault<'info> {
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawFromVault<'info> {
+
+    #[account(
+    mut,
+    constraint = stache.is_vault(vault.index).is_some() @StacheError::InvalidVault,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    )]
+    pub vault: Account<'info, Vault>,
+
+    #[account(
+    mut,
+    associated_token::mint = mint,
+    associated_token::authority = vault,
+    )]
+    pub vault_ata: Account<'info, TokenAccount>,
+
+    // where to send the tokens when emptying
+    #[account(
+    mut,
+    token::mint = mint,
+    )]
+    pub to_token: Account<'info, TokenAccount>,
+
+    pub mint: Account<'info, Mint>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+#[instruction(action_index: u8)]
+pub struct ApproveVaultAction<'info> {
+
+    #[account(
+    mut,
+    constraint = stache.is_vault(vault.index).is_some() @StacheError::InvalidVault,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    constraint = vault.is_action(action_index).is_some() @StacheError::InvalidAction,
+    )]
+    pub vault: Account<'info, Vault>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+
+
+    /* if the action is a withdraw, then the remaining accounts will be:
+    from vault ata, to token account
+     */
+
+}
+
+#[derive(Accounts)]
+pub struct DenyVaultAction<'info> {
+
+    #[account(
+    mut,
+    constraint = stache.is_vault(vault.index).is_some() @StacheError::InvalidVault,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    )]
+    pub vault: Account<'info, Vault>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
 }
 
