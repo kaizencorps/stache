@@ -265,19 +265,16 @@ describe("stache", () => {
 
   it('creates a vault', async () => {
 
-      [vaultPda, vaultPdaBump] = findVaultPda(vaultName, username, domainPda, stacheProgram.programId);
+      // first vault index = 1
+      [vaultPda, vaultPdaBump] = findVaultPda(1, username, domainPda, stacheProgram.programId);
       vaultAta  = getAssociatedTokenAddressSync(mint.publicKey, vaultPda, true);
 
-    let txid = await stacheProgram.methods.createVault(vaultName, {standard: {}}).accounts({
+    let txid = await stacheProgram.methods.createVault(vaultName, {twoSig: {}}).accounts({
         stache: stachePda,
         keychain: userKeychainPda,
         vault: vaultPda,
-        vaultAta: vaultAta,
-        mint: mint.publicKey,
         authority: provider.wallet.publicKey,
         systemProgram: SystemProgram.programId,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       }).rpc();
 
       console.log(`created vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
@@ -286,6 +283,7 @@ describe("stache", () => {
       console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
 
       let tx = new Transaction().add(
+          createAssociatedTokenAccountInstruction(provider.wallet.publicKey, vaultAta, vaultPda, mint.publicKey),
           createTransferCheckedInstruction(userAta, mint.publicKey, vaultAta, provider.wallet.publicKey, 5 * 1e9, 9)
       );
       txid = await provider.sendAndConfirm(tx);
@@ -305,12 +303,7 @@ describe("stache", () => {
       stache: stachePda,
       keychain: userKeychainPda,
       vault: vaultPda,
-      vaultAta: vaultAta,
-      mint: mint.publicKey,
       authority: provider.wallet.publicKey,
-      drainTo: userAta,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
     }).rpc();
 
     console.log(`destroyed vault ${vaultName} >>>> ${vaultPda} <<<< in tx: ${txid}`)

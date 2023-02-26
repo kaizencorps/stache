@@ -136,7 +136,7 @@ pub struct CreateVault<'info> {
     #[account(
     init,
     payer = authority,
-    seeds = [&stache.next_vault_index.checked_add(1).unwrap().to_le_bytes(),
+    seeds = [&stache.next_vault_index.to_le_bytes(),
              VAULT_SPACE.as_bytes().as_ref(),
              stache.stacheid.as_bytes().as_ref(),
              BEARD_SPACE.as_bytes().as_ref(),
@@ -197,28 +197,8 @@ pub struct DestroyVault<'info> {
     )]
     pub vault: Account<'info, Vault>,
 
-    #[account(
-    mut,
-    associated_token::mint = mint,
-    associated_token::authority = vault,
-    close = authority
-    )]
-    pub vault_ata: Account<'info, TokenAccount>,
-
-    // where to send the tokens when emptying
-    #[account(
-    mut,
-    token::mint = mint,
-    )]
-    pub drain_to: Account<'info, TokenAccount>,
-
-    pub mint: Account<'info, Mint>,
-
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 #[derive(Accounts)]

@@ -233,50 +233,8 @@ pub mod stache {
 
     pub fn destroy_vault(ctx: Context<DestroyVault>) -> Result<()> {
         let stache = &mut ctx.accounts.stache;
-        let tokens_left = ctx.accounts.vault_ata.amount;
 
-        let vault = &ctx.accounts.vault;
-
-        // todo: checks ..?
-        let binding = vault.index.to_le_bytes();
-
-        let seeds = &[
-            binding.as_ref(),
-            VAULT_SPACE.as_bytes().as_ref(),
-            stache.stacheid.as_bytes().as_ref(),
-            BEARD_SPACE.as_bytes().as_ref(),
-            stache.domain.as_ref(),
-            STACHE.as_bytes().as_ref(),
-            &[vault.bump],
-        ];
-
-        let signer = &[&seeds[..]];
-
-        // drain the vault first
-        if tokens_left > 0 {
-            let cpi_transfer_accounts = Transfer {
-                from: ctx.accounts.vault_ata.to_account_info(),
-                to: ctx.accounts.drain_to.to_account_info(),
-                authority: ctx.accounts.vault.to_account_info(),
-            };
-            let cpi_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.clone().to_account_info(),
-                         cpi_transfer_accounts, signer);
-            token::transfer(cpi_ctx, tokens_left)?;
-            msg!("drained {} tokens from vault: {}, ata: {}", tokens_left, ctx.accounts.vault.key(), ctx.accounts.vault_ata.key());
-        }
-
-        // close the vault
-        let cpi_close_accounts = CloseAccount {
-            account: ctx.accounts.vault_ata.to_account_info(),
-            destination: ctx.accounts.drain_to.to_account_info(),
-            authority: ctx.accounts.vault.to_account_info(),
-        };
-        let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.clone().to_account_info(),
-                                                  cpi_close_accounts, signer);
-        token::close_account(cpi_ctx)?;
-
-        // now get rid of the vault from stache
+        // get rid of the vault from stache
         stache.remove_vault(ctx.accounts.vault.index);
 
         Ok(())
