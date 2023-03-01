@@ -1,5 +1,5 @@
 import * as anchor from "@project-serum/anchor";
-import {Idl, Program, web3} from "@project-serum/anchor";
+import {Idl, Program, Wallet, web3} from "@project-serum/anchor";
 import { Stache } from "../target/types/stache";
 
 import { execSync } from "child_process";
@@ -63,6 +63,7 @@ const renameCost = new anchor.BN(anchor.web3.LAMPORTS_PER_SOL * 0.01);
 
 const username = randomName();    // used as the keychain + stache name
 const vaultName = randomName();
+const simpleVaultName = randomName();
 
 
 describe("stache", () => {
@@ -82,8 +83,12 @@ describe("stache", () => {
   let stachePda: PublicKey;
   let stachePdaBump: number;
   let vaultPda: PublicKey;
+  let simpleVaultPda: PublicKey;
   let vaultPdaBump: number;
+  let simpleVaultPdaBump: number;
   let vaultAta: PublicKey;
+  let simpleVaultAta: PublicKey;
+  let key2: Keypair = Keypair.generate();
 
   // for admin stuff
   const admin = anchor.web3.Keypair.generate();
@@ -107,6 +112,10 @@ describe("stache", () => {
     );
     await connection.confirmTransaction(
         await connection.requestAirdrop(admin.publicKey, anchor.web3.LAMPORTS_PER_SOL * 50),
+        "confirmed"
+    );
+    await connection.confirmTransaction(
+        await connection.requestAirdrop(key2.publicKey, anchor.web3.LAMPORTS_PER_SOL * 50),
         "confirmed"
     );
 
@@ -148,6 +157,30 @@ describe("stache", () => {
     }).rpc();
 
     console.log(`created keychain for ${username}. tx: ${txid}`);
+
+    // now add a 2nd key
+    txid = await keychainProgram.methods.addKey(key2.publicKey).accounts({
+      keychain: userKeychainPda,
+      domain: domainPda,
+      authority: provider.wallet.publicKey,
+    }).rpc();
+
+    console.log(`added key to keychain for ${username}. tx: ${txid}`);
+
+    const [key2Pda] = findKeychainKeyPda(key2.publicKey, domain, keychainProgram.programId);
+
+    // now verify the 2nd key
+    txid = await keychainProgram.methods.verifyKey().accounts({
+      keychain: userKeychainPda,
+      domain: domainPda,
+      authority: key2.publicKey,
+      treasury: treasury.publicKey,
+      key: key2Pda,
+      userKey: key2.publicKey,
+      systemProgram: SystemProgram.programId,
+    }).signers([key2]).rpc();
+
+    console.log(`verified key ${key2.publicKey.toString()}. tx: ${txid}`);
 
     // now let's create a token
     mint = await createTokenMint(connection, admin, provider.wallet.publicKey);
@@ -263,11 +296,14 @@ describe("stache", () => {
 
   });
 
-  it('creates a vault', async () => {
+  it('creates vaults', async () => {
 
       // first vault index = 1
       [vaultPda, vaultPdaBump] = findVaultPda(1, username, domainPda, stacheProgram.programId);
       vaultAta  = getAssociatedTokenAddressSync(mint.publicKey, vaultPda, true);
+
+    [simpleVaultPda, vaultPdaBump] = findVaultPda(2, username, domainPda, stacheProgram.programId);
+    simpleVaultAta  = getAssociatedTokenAddressSync(mint.publicKey, simpleVaultPda, true);
 
     let txid = await stacheProgram.methods.createVault(vaultName, {twoSig: {}}).accounts({
         stache: stachePda,
@@ -277,7 +313,17 @@ describe("stache", () => {
         systemProgram: SystemProgram.programId,
       }).rpc();
 
-      console.log(`created vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
+      console.log(`created 2sig vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
+
+    txid = await stacheProgram.methods.createVault(simpleVaultName, {simple: {}}).accounts({
+        stache: stachePda,
+        keychain: userKeychainPda,
+        vault: simpleVaultPda,
+        authority: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+
+      console.log(`created simple vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
 
       let userTokenBalance = await connection.getTokenAccountBalance(userAta);
       console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
@@ -287,11 +333,99 @@ describe("stache", () => {
           createTransferCheckedInstruction(userAta, mint.publicKey, vaultAta, provider.wallet.publicKey, 5 * 1e9, 9)
       );
       txid = await provider.sendAndConfirm(tx);
-      console.log(`deposited 5 tokens into vault, txid: ${txid}`);
+      console.log(`deposited 5 tokens into 2sig vault, txid: ${txid}`);
       userTokenBalance = await connection.getTokenAccountBalance(userAta);
       console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
       let vaultTokenBalance = await connection.getTokenAccountBalance(vaultAta);
-      console.log(`vault token balance: ${vaultTokenBalance.value.uiAmount}`);
+      console.log(`2sig vault token balance: ${vaultTokenBalance.value.uiAmount}`);
+
+      // now the simple vault
+      tx = new Transaction().add(
+          createAssociatedTokenAccountInstruction(provider.wallet.publicKey, simpleVaultAta, simpleVaultPda, mint.publicKey),
+          createTransferCheckedInstruction(userAta, mint.publicKey, simpleVaultAta, provider.wallet.publicKey, 5 * 1e9, 9)
+      );
+      txid = await provider.sendAndConfirm(tx);
+      console.log(`deposited 5 tokens into simple vault, txid: ${txid}`);
+      userTokenBalance = await connection.getTokenAccountBalance(userAta);
+      console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
+      vaultTokenBalance = await connection.getTokenAccountBalance(simpleVaultAta);
+      console.log(`simple vault token balance: ${vaultTokenBalance.value.uiAmount}`);
+  });
+
+  it('withdraws tokens from a simple vault', async () => {
+    let withdrawAmount = 3*1e9;  // take out 3 tokens
+    let txid = await stacheProgram.methods.withdrawFromVault(new anchor.BN(withdrawAmount)).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      vault: simpleVaultPda,
+      authority: provider.wallet.publicKey,
+      vaultAta: simpleVaultAta,
+      mint: mint.publicKey,
+      toToken: userAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    }).rpc();
+
+    let userTokenBalance = await connection.getTokenAccountBalance(userAta);
+    console.log(`user token balance after taking 3 tokens from simple vault: ${userTokenBalance.value.uiAmount}`);
+
+    // vault ata  should still be there
+    let vaultAtaInfo = await connection.getAccountInfo(simpleVaultAta);
+    expect(vaultAtaInfo).to.exist;
+    let vaultTokenBalance = await connection.getTokenAccountBalance(simpleVaultAta);
+    expect(vaultTokenBalance.value.uiAmount).to.equal(2);
+  });
+
+  it('withdraws tokens from a 2-sig vault', async () => {
+
+    let withdrawAmount = 5*1e9;  // the amount we deposited into the vault
+    let txid = await stacheProgram.methods.withdrawFromVault(new anchor.BN(withdrawAmount)).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      vault: vaultPda,
+      authority: provider.wallet.publicKey,
+      vaultAta,
+      mint: mint.publicKey,
+      toToken: userAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    }).rpc();
+
+    // this should've created a vault action  in the vault
+    let vault = await stacheProgram.account.vault.fetch(vaultPda);
+    // console.log(`got vault: ${JSON.stringify(vault, null, 2)}`);
+
+    let userTokenAccountBalance = await connection.getTokenAccountBalance(userAta);
+    console.log(`user vault token balance before withdraw: ${userTokenAccountBalance.value.uiAmount}`);
+
+    // now we need to approve the action with the other key
+
+    txid = await stacheProgram.methods.approveAction(1).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      vault: vaultPda,
+      authority: key2.publicKey,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    }).remainingAccounts([
+        // withdrawal expects 2 more accounts: from vault ata, to token account
+        {pubkey: vaultAta, isWritable: true, isSigner: false},
+        {pubkey: userAta, isWritable: true, isSigner: false},
+    ]).signers([key2]).rpc();
+
+    console.log(`approved withdraw action, txid: ${txid}`);
+
+    // vault should no longer have any actions
+    vault = await stacheProgram.account.vault.fetch(vaultPda);
+    // console.log(`got vault: ${JSON.stringify(vault, null, 2)}`);
+
+    // now check that the user got his tokens
+    userTokenAccountBalance = await connection.getTokenAccountBalance(userAta);
+    console.log(`user vault token balance after withdraw: ${userTokenAccountBalance.value.uiAmount}`);
+
+    // and that the vault ata was closed (since it was emptied)
+    let vaultAtaInfo = await connection.getAccountInfo(vaultAta);
+    expect(vaultAtaInfo).to.be.null;
 
   });
 

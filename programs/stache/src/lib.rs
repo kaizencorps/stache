@@ -143,24 +143,8 @@ pub mod stache {
         let stache = &mut ctx.accounts.stache;
         let tokens_left = ctx.accounts.vault_ata.amount;
 
+        let vault_authority = ctx.accounts.vault.clone().to_account_info();
         let mut vault = &mut ctx.accounts.vault;
-
-        // require!(ctx.accounts.vault_ata.mint == ctx.accounts.to_token.mint, StacheError::NonMatchingTokenAccounts);
-
-        let binding = vault.index.to_le_bytes();
-        let seeds = &[
-            binding.as_ref(),
-            VAULT_SPACE.as_bytes().as_ref(),
-            stache.stacheid.as_bytes().as_ref(),
-            BEARD_SPACE.as_bytes().as_ref(),
-            stache.domain.as_ref(),
-            STACHE.as_bytes().as_ref(),
-            &[vault.bump],
-        ];
-
-        let signer = &[&seeds[..]];
-
-        let cpi_program = ctx.accounts.token_program.clone().to_account_info();
 
         require!(amount <= tokens_left, StacheError::InsufficientFunds);
 
@@ -168,19 +152,24 @@ pub mod stache {
             // withdraw
             transfer_from_vault(&stache,
                                 &mut vault,
-                                ctx.accounts.authority.clone().to_account_info(),
+                                vault_authority,
                                 ctx.accounts.vault_ata.clone().to_account_info(),
                                 ctx.accounts.to_token.clone().to_account_info(),
                                 amount,
                                 ctx.accounts.token_program.clone().to_account_info())?;
+
+
         }
 
         Ok(())
     }
 
     pub fn approve_action<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, ApproveVaultAction<'info>>, action_index: u8) -> Result<()> {
+
+        msg!("approving vault action");
         let stache = &mut ctx.accounts.stache;
 
+        let vault_authority = ctx.accounts.vault.clone().to_account_info();
         let vault = &mut ctx.accounts.vault;
         let vault_type = vault.vault_type.clone();
         let vault_action = vault.get_action(action_index).unwrap();
@@ -202,22 +191,20 @@ pub mod stache {
                     require!(from.key() == withdraw_vault_action_data.from, StacheError::InvalidAction);
                     require!(to.key() == withdraw_vault_action_data.to, StacheError::InvalidAction);
 
-                    // todo: figure this out
-                    let from_token = TokenAccount::try_deserialize(&mut from.data.borrow().as_ref())?;
+                    let from_token = Account::<'_, TokenAccount>::try_from(&from).unwrap();
+
                     require!(withdraw_vault_action_data.amount <= from_token.amount, StacheError::InsufficientFunds);
 
                     // withdraw
                     transfer_from_vault(&stache,
                                          vault,
-                                        ctx.accounts.authority.clone().to_account_info(),
+                                        vault_authority,
                                         from,
                                         to,
                                         withdraw_vault_action_data.amount,
                                         ctx.accounts.token_program.clone().to_account_info())?;
 
                     // action has been executed
-                    msg!("action {} executed for stache {}, vault {}", action_index, ctx.accounts.stache.key(), vault.index);
-
                     vault.remove_action(action_index);
                 }
             },
@@ -244,12 +231,12 @@ pub mod stache {
 
 // transfer some tokens out of a vault ata
 pub fn transfer_from_vault<'a, 'b>(current_stache: &CurrentStache,
-                           vault: &Vault,
-                           authority: AccountInfo<'a>,
-                           from_vault_ata: AccountInfo<'b>,
-                           to_token: AccountInfo<'b>,
-                           amount: u64,
-                           token_program: AccountInfo<'a>) -> Result<()>
+                                   vault: &Vault,
+                                   vault_authority: AccountInfo<'a>,
+                                   from_vault_ata: AccountInfo<'b>,
+                                   to_token: AccountInfo<'b>,
+                                   amount: u64,
+                                   token_program: AccountInfo<'a>) -> Result<()>
         where 'a: 'b, 'b: 'a {
 
     let binding = vault.index.to_le_bytes();
@@ -268,18 +255,18 @@ pub fn transfer_from_vault<'a, 'b>(current_stache: &CurrentStache,
     let cpi_transfer_accounts = Transfer {
         from: from_vault_ata.clone(),
         to: to_token.clone(),
-        authority: authority.clone(),
+        authority: vault_authority.clone(),
     };
     let cpi_ctx = CpiContext::new_with_signer(
         token_program.clone(),
         cpi_transfer_accounts, signer);
 
-    let from_token_account = TokenAccount::try_deserialize(&mut from_vault_ata.data.borrow().as_ref())?;
+    let from_token_account = Account::<'_, TokenAccount>::try_from(&from_vault_ata).unwrap();
+
     let tokens_available = from_token_account.amount;
     if tokens_available < amount {
         return err!(StacheError::InsufficientFunds);
     }
-
     token::transfer(cpi_ctx, amount)?;
 
     msg!("transfered {} tokens from vault ata: {}, to account: {}", amount, from_vault_ata.key(), to_token.key());
@@ -291,7 +278,7 @@ pub fn transfer_from_vault<'a, 'b>(current_stache: &CurrentStache,
         let cpi_close_accounts = CloseAccount {
             account: from_vault_ata.clone(),
             destination: to_token.clone(),
-            authority: authority.clone(),
+            authority: vault_authority.clone(),
         };
         let cpi_ctx = CpiContext::new_with_signer(token_program.clone(),
                                                   cpi_close_accounts, signer);
