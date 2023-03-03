@@ -6,7 +6,14 @@ import { execSync } from "child_process";
 
 import kcidl from "../idl/keychain.json";
 
-import {Keypair, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction} from "@solana/web3.js";
+import {
+  Keypair,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  sendAndConfirmTransaction,
+  SystemProgram,
+  Transaction
+} from "@solana/web3.js";
 import {
   createNFTMint, createTokenMint,
   findStachePda,
@@ -218,6 +225,17 @@ describe("stache", () => {
     tokenAmount = await connection.getTokenAccountBalance(userAta);
     console.log(`>> user ata balance: ${tokenAmount.value.uiAmount}`);
 
+    // stash 5 sol
+    tx = new Transaction().add(
+        // trasnfer SOL
+        SystemProgram.transfer({
+          fromPubkey: provider.wallet.publicKey,
+          toPubkey: stachePda,
+          lamports: 5 * LAMPORTS_PER_SOL,
+        }));
+    txid = await provider.sendAndConfirm(tx);
+
+    console.log(`"stashed" 5 sol in stache wallet: ${txid}`);
 
     // now let's stash via the stash instruction
     tx = await stacheProgram.methods.stash(new anchor.BN(500 * 1e9)).accounts({
@@ -251,6 +269,7 @@ describe("stache", () => {
       toToken: userAta,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
     }).transaction();
 
     txid = await provider.sendAndConfirm(tx);
@@ -260,6 +279,23 @@ describe("stache", () => {
     console.log(`new stache mint ata balance: ${tokenAmount.value.uiAmount}`);
     tokenAmount = await connection.getTokenAccountBalance(userAta);
     console.log(`new user ata balance: ${tokenAmount.value.uiAmount}`);
+
+    // now unstash 4 sol
+    tx = await stacheProgram.methods.unstashSol(new anchor.BN(4 * LAMPORTS_PER_SOL)).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      owner: provider.wallet.publicKey,
+    }).transaction();
+
+    // const simulationResponse = await provider.simulate(tx);
+    // console.log(`unstash simulation: ${JSON.stringify(simulationResponse)}`);
+
+    txid = await provider.sendAndConfirm(tx);
+
+    let solbalance = await connection.getBalance(stachePda);
+    console.log(`unstashed 4 sol, new stache sol balance: ${solbalance}`);
+    expect(solbalance).is.gt(LAMPORTS_PER_SOL);
+
 
   });
 

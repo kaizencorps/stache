@@ -73,6 +73,25 @@ pub mod stache {
         Ok(())
     }
 
+    pub fn unstash_sol(ctx: Context<UnstashSol>, lamports: u64) -> Result<()> {
+
+        let rent = &ctx.accounts.rent;
+        let min_rent = rent.minimum_balance(8 + CurrentStache::MAX_SIZE);
+
+        let from_account = ctx.accounts.stache.to_account_info();
+        let to_account = ctx.accounts.owner.to_account_info();
+
+        // don't allow an unstash to close our stache account
+        if **from_account.try_borrow_lamports()? - min_rent - lamports < 0 {
+            return Err(StacheError::InsufficientFunds.into());
+        }
+
+        // Debit from_account and credit to_account
+        **from_account.try_borrow_mut_lamports()? -= lamports;
+        **to_account.try_borrow_mut_lamports()? += lamports;
+        Ok(())
+    }
+
     pub fn unstash(ctx: Context<Unstash>, amount: u64) -> Result<()> {
 
         // todo: proper checks

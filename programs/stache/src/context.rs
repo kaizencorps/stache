@@ -90,6 +90,25 @@ pub struct Stash<'info> {
 
 
 #[derive(Accounts)]
+pub struct UnstashSol<'info> {
+    #[account(
+    mut,
+    has_one = keychain
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&owner.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    pub rent: Sysvar<'info, Rent>,
+
+    // pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct Unstash<'info> {
 
     #[account(

@@ -12,4 +12,16 @@ pub enum StacheError {
     MaxVaults,
     #[msg("Invalid vault")]
     InvalidVault,
+    #[msg("Insufficient funds")]
+    InsufficientFunds,
+    #[msg("Vault locked")]
+    VaultLocked,
+    #[msg("Invalid action")]
+    InvalidAction,
+    #[msg("Already approved")]
+    AlreadyApproved,
+    #[msg("Token accounts do not match")]
+    NonMatchingTokenAccounts,
+    #[msg("Invalid vault action")]
+    InvalidVaultAction
 }
