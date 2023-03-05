@@ -86,9 +86,9 @@ pub struct Approver {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
 pub enum VaultType {
-    Simple,   // "open" not requiring sigs (like the stash)
+    Easy,   // not requiring sigs (like the stache)
     TwoSig,   // just 2 sigs
-    Multisig { sigs: u8}, //  sigs = threshold (squads)
+    Squads { multisig: Pubkey, sigs: u8}, //  squads; sigs = threshold
 }
 
 
@@ -110,7 +110,7 @@ impl Vault {
         32 +        // stache
         1 +        // index
         1 +         // bump
-        2 +         // vault type
+        1 + 1 + 32 +         // vault type
         1 +         // locked
         32 +        // name
         (4 + (MAX_VAULT_ACTIONS * VaultAction::MAX_SIZE)) + // actions
@@ -145,7 +145,7 @@ impl Vault {
             return Err(StacheError::VaultLocked.into());
         }
         match self.vault_type {
-            VaultType::Simple => {
+            VaultType::Easy => {
                 // do the withdraw
                 return Ok(true);
             }
@@ -208,7 +208,7 @@ pub struct VaultAction {
     pub action_index: u8,
     pub action: VaultActionType,
     pub approvers: Vec<Pubkey>,
-    pub data: Vec<u8>,
+    pub data: Vec<u8>,      // depends on the VaultActionType
 }
 
 impl VaultAction {

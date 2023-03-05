@@ -63,7 +63,7 @@ const renameCost = new anchor.BN(anchor.web3.LAMPORTS_PER_SOL * 0.01);
 
 const username = randomName();    // used as the keychain + stache name
 const vaultName = randomName();
-const simpleVaultName = randomName();
+const easyVaultName = randomName();
 
 
 describe("stache", () => {
@@ -83,11 +83,10 @@ describe("stache", () => {
   let stachePda: PublicKey;
   let stachePdaBump: number;
   let vaultPda: PublicKey;
-  let simpleVaultPda: PublicKey;
+  let easyVaultPda: PublicKey;
   let vaultPdaBump: number;
-  let simpleVaultPdaBump: number;
   let vaultAta: PublicKey;
-  let simpleVaultAta: PublicKey;
+  let easyVaultAta: PublicKey;
   let key2: Keypair = Keypair.generate();
 
   // for admin stuff
@@ -302,8 +301,8 @@ describe("stache", () => {
       [vaultPda, vaultPdaBump] = findVaultPda(1, username, domainPda, stacheProgram.programId);
       vaultAta  = getAssociatedTokenAddressSync(mint.publicKey, vaultPda, true);
 
-    [simpleVaultPda, vaultPdaBump] = findVaultPda(2, username, domainPda, stacheProgram.programId);
-    simpleVaultAta  = getAssociatedTokenAddressSync(mint.publicKey, simpleVaultPda, true);
+    [easyVaultPda, vaultPdaBump] = findVaultPda(2, username, domainPda, stacheProgram.programId);
+    easyVaultAta  = getAssociatedTokenAddressSync(mint.publicKey, easyVaultPda, true);
 
     let txid = await stacheProgram.methods.createVault(vaultName, {twoSig: {}}).accounts({
         stache: stachePda,
@@ -315,15 +314,15 @@ describe("stache", () => {
 
       console.log(`created 2sig vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
 
-    txid = await stacheProgram.methods.createVault(simpleVaultName, {simple: {}}).accounts({
+    txid = await stacheProgram.methods.createVault(easyVaultName, {easy: {}}).accounts({
         stache: stachePda,
         keychain: userKeychainPda,
-        vault: simpleVaultPda,
+        vault: easyVaultPda,
         authority: provider.wallet.publicKey,
         systemProgram: SystemProgram.programId,
       }).rpc();
 
-      console.log(`created simple vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
+      console.log(`created easy vault for ${username} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
 
       let userTokenBalance = await connection.getTokenAccountBalance(userAta);
       console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
@@ -339,27 +338,41 @@ describe("stache", () => {
       let vaultTokenBalance = await connection.getTokenAccountBalance(vaultAta);
       console.log(`2sig vault token balance: ${vaultTokenBalance.value.uiAmount}`);
 
-      // now the simple vault
+      // now the easy vault
       tx = new Transaction().add(
-          createAssociatedTokenAccountInstruction(provider.wallet.publicKey, simpleVaultAta, simpleVaultPda, mint.publicKey),
-          createTransferCheckedInstruction(userAta, mint.publicKey, simpleVaultAta, provider.wallet.publicKey, 5 * 1e9, 9)
+          createAssociatedTokenAccountInstruction(provider.wallet.publicKey, easyVaultAta, easyVaultPda, mint.publicKey),
+          createTransferCheckedInstruction(userAta, mint.publicKey, easyVaultAta, provider.wallet.publicKey, 5 * 1e9, 9)
       );
       txid = await provider.sendAndConfirm(tx);
-      console.log(`deposited 5 tokens into simple vault, txid: ${txid}`);
+      console.log(`deposited 5 tokens into easy vault, txid: ${txid}`);
       userTokenBalance = await connection.getTokenAccountBalance(userAta);
       console.log(`user token balance: ${userTokenBalance.value.uiAmount}`);
-      vaultTokenBalance = await connection.getTokenAccountBalance(simpleVaultAta);
-      console.log(`simple vault token balance: ${vaultTokenBalance.value.uiAmount}`);
+      vaultTokenBalance = await connection.getTokenAccountBalance(easyVaultAta);
+      console.log(`easy vault token balance: ${vaultTokenBalance.value.uiAmount}`);
+
+      // mimic squads vault creation
+      let squadsVaultName = 'squads';
+      let squadsPda = Keypair.generate().publicKey;
+      let [squadsVaultPda] = findVaultPda(3, username, domainPda, stacheProgram.programId);
+      txid = await stacheProgram.methods.createVault(squadsVaultName, {squads: {multisig: squadsPda, sigs: 2}}).accounts({
+        stache: stachePda,
+        keychain: userKeychainPda,
+        vault: squadsVaultPda,
+        authority: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+
+      console.log(`created squads vault for ms @ ${squadsPda} >>>> ${vaultPda} <<<< bump: ${vaultPdaBump} in tx: ${txid}`);
   });
 
-  it('withdraws tokens from a simple vault', async () => {
+  it('withdraws tokens from a easy vault', async () => {
     let withdrawAmount = 3*1e9;  // take out 3 tokens
     let txid = await stacheProgram.methods.withdrawFromVault(new anchor.BN(withdrawAmount)).accounts({
       stache: stachePda,
       keychain: userKeychainPda,
-      vault: simpleVaultPda,
+      vault: easyVaultPda,
       authority: provider.wallet.publicKey,
-      vaultAta: simpleVaultAta,
+      vaultAta: easyVaultAta,
       mint: mint.publicKey,
       toToken: userAta,
       tokenProgram: TOKEN_PROGRAM_ID,
@@ -367,12 +380,12 @@ describe("stache", () => {
     }).rpc();
 
     let userTokenBalance = await connection.getTokenAccountBalance(userAta);
-    console.log(`user token balance after taking 3 tokens from simple vault: ${userTokenBalance.value.uiAmount}`);
+    console.log(`user token balance after taking 3 tokens from easy vault: ${userTokenBalance.value.uiAmount}`);
 
     // vault ata  should still be there
-    let vaultAtaInfo = await connection.getAccountInfo(simpleVaultAta);
+    let vaultAtaInfo = await connection.getAccountInfo(easyVaultAta);
     expect(vaultAtaInfo).to.exist;
-    let vaultTokenBalance = await connection.getTokenAccountBalance(simpleVaultAta);
+    let vaultTokenBalance = await connection.getTokenAccountBalance(easyVaultAta);
     expect(vaultTokenBalance.value.uiAmount).to.equal(2);
   });
 
