@@ -136,10 +136,10 @@ export const findStachePda = (stacheId: string, domainPda: PublicKey, stacheprog
   );
 };
 
-export const findVaultPda = (vaultName: string, stacheId: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
+export const findVaultPda = (vaultIndex: number, stacheId: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
   return anchor.web3.PublicKey.findProgramAddressSync(
       [
-        Buffer.from(anchor.utils.bytes.utf8.encode(vaultName)),
+        Buffer.from([vaultIndex]),
         Buffer.from(anchor.utils.bytes.utf8.encode(VAULT_SPACE)),
         Buffer.from(anchor.utils.bytes.utf8.encode(stacheId)),
         Buffer.from(anchor.utils.bytes.utf8.encode(BEARD_SPACE)),
