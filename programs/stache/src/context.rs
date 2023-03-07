@@ -358,13 +358,145 @@ pub struct CreateAutomation<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    // these needed for activation
-    // the clockwork thread account
-    // #[account(mut, address = Thread::pubkey(profile.key(), automation_id.to_string().into()))]
-    // pub thread: SystemAccount<'info>,
-    // pub clockwork: Program<'info, ThreadProgram>,
-
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetAutomationTrigger<'info> {
+
+    #[account(
+    mut,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    )]
+    pub auto: Account<'info, Auto>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    // depending on the trigger being set, this token account might not be needed
+    #[account(
+    mut,
+    )]
+    pub token: Option<Account<'info, TokenAccount>>,
 
 }
 
+#[derive(Accounts)]
+pub struct SetAutomationAction<'info> {
+
+    #[account(
+    mut,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    )]
+    pub auto: Account<'info, Auto>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    // depending on the trigger being set, these accounts might not be needed but for now we'll just make them req'd to make my life easier
+    // todo: we can make these remaining accounts later since they're tied to a specific action
+
+    // for now, needs to be a stache ata
+    #[account(
+    associated_token::mint = mint,
+    associated_token::authority = stache
+    )]
+    pub from_token: Option<Account<'info, TokenAccount>>,
+    #[account(
+    token::mint = mint,
+    )]
+    pub to_token: Option<Account<'info, TokenAccount>>,
+    pub mint: Account<'info, Mint>,
+    pub associated_token_program: Option<Program<'info, AssociatedToken>>,
+}
+
+#[derive(Accounts)]
+#[instruction(automated: bool)]
+pub struct ActivateAutomation<'info> {
+
+    #[account(
+    mut,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    )]
+    pub auto: Account<'info, Auto>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    // the clockwork thread account
+    #[account(mut,
+        address = Thread::pubkey(auto.key(), auto.name.clone().into()))
+    ]
+    pub thread: Option<SystemAccount<'info>>,
+
+    pub clockwork: Option<Program<'info, ThreadProgram>>,
+    pub system_program: Option<Program<'info, System>>,
+}
+
+#[derive(Accounts)]
+pub struct FireAutomation<'info> {
+
+    #[account(
+    mut,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    )]
+    pub auto: Account<'info, Auto>,
+
+    // the clockwork thread account - optional in case the user wants to test the automation outside of clockwork
+    #[account(mut, address = Thread::pubkey(auto.key(), auto.name.clone().into()))]
+    pub thread: Option<SystemAccount<'info>>,
+
+    // for doing transfers we'll need the appropriate token accounts - but they're optional cause depends what the automation needs
+
+    pub from_token: Option<Account<'info, TokenAccount>>,
+    pub to_token: Option<Account<'info, TokenAccount>>,
+    pub token_program: Option<Program<'info, Token>>,
+
+
+    // these accounts are needed if the user fires the automation
+
+    // needed if the user fires
+    #[account(constraint = authority.is_some() && keychain.has_key(&authority.as_ref().unwrap().key()))]
+    pub keychain: Option<Account<'info, CurrentKeyChain>>,
+
+    // this is here for testing the method outside of clockwork, but might be useful for the user to test
+    #[account(mut)]
+    pub authority: Option<Signer<'info>>,
+
+
+
+
+}

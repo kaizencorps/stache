@@ -190,7 +190,7 @@ impl Vault {
                 return Ok(false);
             }
             _ => {
-                // don't support multisig for now
+                // don't support multisig for now (todo)
                 msg!("withdraw for vault type not supported: {:?}", self.vault_type);
                 return Ok(false);
             }
@@ -241,7 +241,7 @@ impl VaultAction {
         if self.action_type != ActionType::Transfer {
             return err!(StacheError::InvalidAction);
         }
-        // deserialize the data into the WithdrawVaultActionData
+        // deserialize the data into the TransferAction
         let withdraw_data = AnchorDeserialize::deserialize(&mut self.action.as_slice()).unwrap();
         Ok(withdraw_data)
     }
@@ -266,6 +266,14 @@ pub enum TriggerType {
     Balance,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub struct BalanceTrigger {
+    pub account: Pubkey,
+    pub trigger_balance: u64,   // the balance that triggers the action (balance gets either below/above this)
+    pub above: bool,            // above = true, then trigger fires if balance is above trigger_balance, else when below
+}
+
+
 #[account]
 pub struct Auto {
     pub stache: Pubkey,
@@ -279,7 +287,6 @@ pub struct Auto {
     pub action: Vec<u8>,       //  depends on the action type
     pub trigger_type: TriggerType,
     pub trigger: Vec<u8>,
-
 }
 
 impl Auto {
@@ -293,6 +300,27 @@ impl Auto {
         32 +        // name
         1 +         // action type
         128;        // should be good enough for whatever action for now
+
+
+    // todo: pull into a trait / remove dupe code
+
+    pub fn transfer_action(&mut self) -> Result<TransferAction> {
+        if self.action_type != ActionType::Transfer {
+            return err!(StacheError::InvalidAction);
+        }
+        // deserialize the data into the TransferAction
+        let withdraw_data = AnchorDeserialize::deserialize(&mut self.action.as_slice()).unwrap();
+        Ok(withdraw_data)
+    }
+
+    pub fn balance_trigger(&mut self) -> Result<BalanceTrigger> {
+        if self.trigger_type != TriggerType::Balance {
+            return err!(StacheError::InvalidTrigger);
+        }
+        // deserialize the data into the TransferAction
+        let trigger_data = AnchorDeserialize::deserialize(&mut self.trigger.as_slice()).unwrap();
+        Ok(trigger_data)
+    }
 }
 
 

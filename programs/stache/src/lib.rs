@@ -18,10 +18,28 @@ use constant::*;
 use context::*;
 use util::*;
 
+use {
+    anchor_lang::{
+        prelude::*,
+        solana_program::{instruction::Instruction, system_program}, InstructionData,
+    },
+    clockwork_sdk::{
+        ID as thread_program_ID,
+        self,
+        state::{Thread, Trigger, ThreadAccount, ThreadResponse},
+        ThreadProgram,
+    },
+};
+
 
 #[program]
 pub mod stache {
     use super::*;
+
+    use anchor_lang::solana_program::{
+        program::{invoke},
+        system_instruction,
+    };
 
     // creates the stache (beard) account
     pub fn create_stache(ctx: Context<CreateStache>) -> Result<()> {
@@ -129,7 +147,7 @@ pub mod stache {
 
     pub fn create_vault(ctx: Context<CreateVault>, name: String, vault_type: VaultType) -> Result<()> {
 
-        let is_valid_name = is_valid_name(&name);
+        let is_valid_name = is_valid_name(&name, false);
         require!(is_valid_name, StacheError::InvalidName);
 
         let stache = &mut ctx.accounts.stache;
@@ -258,7 +276,7 @@ pub mod stache {
 
     pub fn create_automation(ctx: Context<CreateAutomation>, name: String) -> Result<()> {
 
-        let is_valid_name = is_valid_name(&name);
+        let is_valid_name = is_valid_name(&name, false);
         require!(is_valid_name, StacheError::InvalidName);
 
         let stache = &mut ctx.accounts.stache;
@@ -275,6 +293,184 @@ pub mod stache {
         auto.active = false;
         auto.paused = true;
         auto.name = name;
+
+        Ok(())
+    }
+
+    pub fn set_auto_balance_trigger(ctx: Context<SetAutomationTrigger>, trigger_balance: u64, above: bool) -> Result<()> {
+        let auto = &mut ctx.accounts.auto;
+
+        require!(!auto.active, StacheError::AutomationLocked);
+
+        if ctx.accounts.token.is_none() {
+            return Err(StacheError::MissingAccount.into());
+        }
+
+        let mut token = ctx.accounts.token.as_ref().unwrap().key();
+
+        // set the trigger
+        auto.trigger_type = TriggerType::Balance;
+        auto.trigger = BalanceTrigger {
+            account: token,
+            trigger_balance,
+            above,
+        }.try_to_vec().unwrap();
+
+        let stache = &mut ctx.accounts.stache;
+
+        Ok(())
+    }
+
+    // from = stache ata; for now just works on stache, but later can easily set up to work on vaults as well
+    pub fn set_automation_action(ctx: Context<SetAutomationAction>, amount: u64) -> Result<()> {
+        let auto = &mut ctx.accounts.auto;
+
+        require!(!auto.active, StacheError::AutomationLocked);
+        if ctx.accounts.from_token.is_none() || ctx.accounts.to_token.is_none() || ctx.accounts.associated_token_program.is_none() {
+            return Err(StacheError::MissingAccount.into());
+        }
+
+        // this check will need to go in after we remove the constraints
+        // require!(ctx.accounts.from_token.unwrap().mint == ctx.accounts.to_token.unwrap().mint, StacheError::TokenAccountsMismatch);
+
+        // set the action
+        auto.action_type = ActionType::Transfer;
+        auto.action = TransferAction {
+            from: ctx.accounts.from_token.as_ref().unwrap().key(),
+            to: ctx.accounts.to_token.as_ref().unwrap().key(),
+            amount,
+        }.try_to_vec().unwrap();
+
+        Ok(())
+    }
+
+    // fire an automation, called by clockwork thread
+    pub fn fire_automation(ctx: Context<FireAutomation>) -> Result<()> {
+
+        let auto = &mut ctx.accounts.auto;
+
+        // only 1 type of action/trigger now so we can just do this
+        let action = auto.transfer_action()?;
+        let trigger = auto.balance_trigger()?;
+
+        // since there's only 1 action/trigger, we'll always need these programs
+        require!(ctx.accounts.token_program.is_some(), StacheError::MissingAccount);
+
+        // either thread (automation) or authority (manual) has to be present
+        require!(ctx.accounts.authority.is_some() || ctx.accounts.thread.is_some(), StacheError::MissingAccount);
+
+        let mut should_trigger = false;
+
+        // validate conditions of the trigger
+        let accs = &mut ctx.remaining_accounts.iter();
+        let balance_check_account_info = next_account_info(accs)?.to_account_info();
+
+        let account_data = &mut &**balance_check_account_info.try_borrow_mut_data()?;
+        let balance_token_account = TokenAccount::try_deserialize(account_data)?;
+        if balance_token_account.amount >= trigger.trigger_balance && trigger.above {
+            msg!("balance above trigger condition met. account balance: {}, trigger balance: {}, ", balance_token_account.amount, trigger.trigger_balance);
+            should_trigger = true;
+        } else if balance_token_account.amount < trigger.trigger_balance && !trigger.above {
+            msg!("balance below trigger condition met. account balance: {}, trigger balance: {}", balance_token_account.amount, trigger.trigger_balance);
+            should_trigger = true;
+        }
+
+        let from_token = ctx.accounts.from_token.as_ref().unwrap();
+        let to_token = ctx.accounts.to_token.as_ref().unwrap();
+
+        if from_token.amount < action.amount {
+            msg!("insufficient funds to execute action. from token amount: {}, action amount: {}", from_token.amount, action.amount);
+            should_trigger = false;
+        }
+
+        // require!(from_token.amount >= action.amount, StacheError::InsufficientFunds);
+        if should_trigger {
+            let stache = &ctx.accounts.stache;
+
+            // execute the action
+            let seeds = &[
+                stache.stacheid.as_bytes().as_ref(),
+                BEARD_SPACE.as_bytes().as_ref(),
+                stache.domain.as_ref(),
+                STACHE.as_bytes().as_ref(),
+                &[stache.bump],
+            ];
+
+            let signer = &[&seeds[..]];
+
+            let cpi_accouts = Transfer {
+                from: from_token.to_account_info(),
+                to: to_token.to_account_info(),
+                authority: stache.to_account_info(),
+            };
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
+                cpi_accouts,
+                signer);
+            token::transfer(cpi_ctx, action.amount)?;
+
+            msg!("executing automation. transfering {} from {} to {}", action.amount, from_token.key(), to_token.key());
+        } else {
+            msg!("automation conditions not met or insufficient funds, not executing");
+        }
+
+        Ok(())
+    }
+
+    // if automated = true, will use the trigger to configure a clockwork thread
+    pub fn activate_automation(ctx: Context<ActivateAutomation>, automated: bool) -> Result<()> {
+
+        let auto = &mut ctx.accounts.auto;
+        auto.active = true;
+
+        // then we configure clockwork
+        if automated {
+
+            // then these accounts need to have been passed in
+            require!(ctx.accounts.thread.is_some(), StacheError::MissingAccount);
+            require!(ctx.accounts.clockwork.is_some(), StacheError::MissingAccount);
+            require!(ctx.accounts.system_program.is_some(), StacheError::MissingAccount);
+
+            /*
+            let clockwork = &ctx.accounts.clockwork;
+            let system_program = &ctx.accounts.system_program;
+
+            clockwork_sdk::cpi::thread_create(
+                CpiContext::new_with_signer(
+                    clockwork.to_account_info(),
+                    clockwork_sdk::cpi::ThreadCreate {
+                        authority: ctx.accounts.profile.to_account_info(),
+                        payer: ctx.accounts.signer.to_account_info(),
+                        system_program: system_program.to_account_info(),
+                        thread: ctx.accounts.thread.to_account_info(),
+                    },
+                    &[seeds],
+                    // &[&[SEED_AUTHORITY, &[bump]]],
+                ),
+                // thread id
+                automation_id.to_string().into(),
+                // instruction
+                hello_ix.into(),
+                // trigger
+                trigger
+            )?;
+
+            // fund the thread a bit
+            invoke(
+                &system_instruction::transfer(
+                    ctx.accounts.signer.key,
+                    ctx.accounts.thread.key,
+                    10000000 as u64
+                ),
+                &[
+                    ctx.accounts.signer.to_account_info().clone(),
+                    ctx.accounts.thread.to_account_info().clone(),
+                    ctx.accounts.system_program.to_account_info().clone(),
+                ],
+            )?;
+
+             */
+        }
 
         Ok(())
     }
