@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::constant::{MAX_SUBMITTERS, MAX_APPROVERS, MAX_VAULTS, MAX_VAULT_ACTIONS};
+use crate::constant::{MAX_SUBMITTERS, MAX_APPROVERS, MAX_VAULTS, MAX_VAULT_ACTIONS, MAX_AUTOS};
 use crate::error::StacheError;
 
 
@@ -16,20 +16,18 @@ pub struct CurrentStache {
 
     // next vault index; since there can only be MAX_VAULTS at a time, previous ones will expire so this index will eventually wrap
     pub next_vault_index: u8,
+    pub next_auto_index: u8,
 
     // vault ids that are currently active
     pub vaults: Vec<u8>,
 
-    // pub vaults: Vec<Pubkey>,
-    // pub submitters: Vec<Submitter>,
-    // pub approvers: Vec<Approver>,
+    // automation ids that are currently active
+    pub autos: Vec<u8>,
+
 }
 
 impl CurrentStache {
-    // previous account size = 304 bytes
-    // pub const MAX_SIZE: usize = 1 + 1 + 32 + 32 + 32 + (4 + (MAX_SUBMITTERS * 33)) + (4 + (MAX_APPROVERS * 33));
-    // this size: 258 + rest padding (128) = 386
-    pub const MAX_SIZE: usize = 1 + 1 + 32 + 32 + 32 + (4 + (MAX_VAULTS)) +
+    pub const MAX_SIZE: usize = 1 + 1 + 32 + 32 + 32 + 1 + 1 + (4 + (MAX_VAULTS)) + (4 + (MAX_AUTOS)) +
         128; // extra space for now;
     pub const CURRENT_VERSION: u8 = 1;
 
@@ -45,29 +43,49 @@ impl CurrentStache {
     //     }
     // }
 
-    pub fn is_vault(&self, index: u8) -> Option<usize> {
-        match self.vaults.iter().position(|&x| x == index) {
+
+    fn is_index(&self, index: u8, list: &Vec<u8>) -> Option<usize> {
+        match list.iter().position(|&x| x == index) {
             Some(index) => Some(index),
             _ => None,
         }
     }
 
-    // adds a vault, increments next vault index, and returns the index of added vault
-    pub fn add_vault(&mut self) -> Result<u8> {
-        // check that we've got room
-        require!(usize::from(self.vaults.len()) < MAX_VAULTS, StacheError::MaxVaults);
+    pub fn is_vault(&self, index: u8) -> Option<usize> {
+        return self.is_index(index, &self.vaults);
+    }
 
-        let mut index = self.next_vault_index;
-        if self.next_vault_index + 1 == u8::MAX {
-            // todo: handle wrapping properly
-            self.next_vault_index = 2;
+    pub fn is_auto(&self, index: u8) -> Option<usize> {
+        return self.is_index(index, &self.autos);
+    }
+
+    fn add_index(list: &mut Vec<u8>, max: usize, next_index: &mut u8) -> Result<u8> {
+        // check that we've got room
+        require!(usize::from(list.len()) < max, StacheError::HitLimit);
+
+        // todo: handle wrapping properly
+        let mut index: u8 = *next_index;
+        if *next_index + 1 == u8::MAX {
+            *next_index = 2;
             index = 1;
         } else {
-            self.next_vault_index += 1;
+            *next_index += 1;
         }
-        self.vaults.push(index);
+
+        list.push(index);
         return Ok(index);
     }
+
+    // adds a vault, increments next vault index, and returns the index of added vault
+    pub fn add_vault(&mut self) -> Result<u8> {
+        return Self::add_index(&mut self.vaults, MAX_VAULTS, &mut self.next_vault_index);
+    }
+
+    // adds a vault, increments next vault index, and returns the index of added vault
+    pub fn add_auto(&mut self) -> Result<u8> {
+        return Self::add_index(&mut self.autos, MAX_AUTOS, &mut self.next_auto_index);
+    }
+
 }
 
 #[derive(Debug, Clone, AnchorSerialize, AnchorDeserialize)]
@@ -160,9 +178,9 @@ impl Vault {
 
                 let mut action = VaultAction {
                     action_index: self.next_action_index - 1,
-                    action: VaultActionType::Withdraw,
+                    action_type: ActionType::Transfer,
                     approvers: vec![initiator.clone()],
-                    data: WithdrawVaultActionData {
+                    action: TransferAction {
                         from: from.clone(),
                         to: to.clone(),
                         amount,
@@ -185,18 +203,18 @@ impl Vault {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
-pub enum VaultActionType {
-    Withdraw,
+pub enum ActionType {
+    Transfer,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
-pub struct WithdrawVaultActionData {
+pub struct TransferAction {
     pub from: Pubkey,
     pub to: Pubkey,
     pub amount: u64,
 }
 
-impl WithdrawVaultActionData {
+impl TransferAction {
 
     pub const MAX_SIZE: usize =
         8 +         // amount
@@ -206,23 +224,25 @@ impl WithdrawVaultActionData {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub struct VaultAction {
     pub action_index: u8,
-    pub action: VaultActionType,
+    pub action_type: ActionType,
     pub approvers: Vec<Pubkey>,
-    pub data: Vec<u8>,      // depends on the VaultActionType
+    pub action: Vec<u8>,      // depends on the ActionType
 }
 
 impl VaultAction {
 
     pub const MAX_SIZE: usize =
+        1 +         // action index
         1 +         // action type
-        128;        // should be good enough for now right?
+        4 + (32 * MAX_VAULTS)  +        // approvers
+        128;        // should be good enough for whatever action for now
 
-    pub fn withdraw_action(&mut self) -> Result<WithdrawVaultActionData> {
-        if self.action != VaultActionType::Withdraw {
-            return err!(StacheError::InvalidVaultAction);
+    pub fn transfer_action(&mut self) -> Result<TransferAction> {
+        if self.action_type != ActionType::Transfer {
+            return err!(StacheError::InvalidAction);
         }
         // deserialize the data into the WithdrawVaultActionData
-        let withdraw_data = AnchorDeserialize::deserialize(&mut self.data.as_slice()).unwrap();
+        let withdraw_data = AnchorDeserialize::deserialize(&mut self.action.as_slice()).unwrap();
         Ok(withdraw_data)
     }
 
@@ -237,6 +257,42 @@ impl VaultAction {
     pub fn count_approvers(&self) -> usize {
         self.approvers.len()
     }
+}
+
+////////// AUTOMATIONS ///////
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
+pub enum TriggerType {
+    Balance,
+}
+
+#[account]
+pub struct Auto {
+    pub stache: Pubkey,
+    pub index: u8,
+    pub bump: u8,
+    pub active: bool,
+    pub paused: bool,
+    pub thread: Pubkey,         // clockwork thread
+    pub name: String,
+    pub action_type: ActionType,
+    pub action: Vec<u8>,       //  depends on the action type
+    pub trigger_type: TriggerType,
+    pub trigger: Vec<u8>,
 
 }
+
+impl Auto {
+    pub const MAX_SIZE: usize =
+        32 +        // stache
+        1 +        // index
+        1 +         // bump
+        1 +         // active
+        1 +         // paused
+        32 +         // thread
+        32 +        // name
+        1 +         // action type
+        128;        // should be good enough for whatever action for now
+}
+
 

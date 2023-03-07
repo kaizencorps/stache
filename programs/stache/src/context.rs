@@ -9,6 +9,12 @@ use keychain::account::CurrentKeyChain;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
+use clockwork_sdk::{
+    self,
+    state::{Thread, Trigger, ThreadAccount, ThreadResponse},
+    ThreadProgram,
+};
+
 #[derive(Accounts)]
 pub struct CreateStache<'info> {
 
@@ -138,6 +144,8 @@ pub struct Unstash<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
+
+/////////// VAULTS ///////////
 
 #[derive(Accounts)]
 #[instruction(name: String)]
@@ -317,5 +325,46 @@ pub struct DenyVaultAction<'info> {
 
     #[account(mut)]
     pub authority: Signer<'info>,
+}
+
+//////// AUTOMATIONS ////////
+
+#[derive(Accounts)]
+pub struct CreateAutomation<'info> {
+
+    #[account(
+        mut,
+        has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+        init,
+        payer = authority,
+        seeds = [&stache.next_auto_index.to_le_bytes(),
+        AUTO_SPACE.as_bytes().as_ref(),
+        stache.stacheid.as_bytes().as_ref(),
+        BEARD_SPACE.as_bytes().as_ref(),
+        stache.domain.as_ref(),
+        STACHE.as_bytes().as_ref()],
+        bump,
+        space = 8 + Auto::MAX_SIZE,
+    )]
+    pub auto: Account<'info, Auto>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    // these needed for activation
+    // the clockwork thread account
+    // #[account(mut, address = Thread::pubkey(profile.key(), automation_id.to_string().into()))]
+    // pub thread: SystemAccount<'info>,
+    // pub clockwork: Program<'info, ThreadProgram>,
+
+    pub system_program: Program<'info, System>,
+
 }
 

@@ -22,6 +22,8 @@ pub enum StacheError {
     AlreadyApproved,
     #[msg("Token accounts do not match")]
     NonMatchingTokenAccounts,
-    #[msg("Invalid vault action")]
-    InvalidVaultAction
+    #[msg("Automation limit hit")]
+    MaxAutos,
+    #[msg("Hit limit")]
+    HitLimit,
 }

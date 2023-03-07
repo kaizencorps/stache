@@ -41,6 +41,7 @@ pub mod stache {
         stache.keychain = ctx.accounts.keychain.key();
         stache.bump = *ctx.bumps.get("stache").unwrap();
         stache.next_vault_index = 1;    // we'll start at 1 and reserve 0 in case we wanna use it later
+        stache.next_auto_index = 1;
         stache.vaults = Vec::with_capacity(MAX_VAULTS);
 
         Ok(())
@@ -196,14 +197,14 @@ pub mod stache {
         let vault_type = vault.vault_type.clone();
         let vault_action = vault.get_action(action_index).unwrap();
 
-        match vault_action.action {
-            VaultActionType::Withdraw => {
+        match vault_action.action_type {
+            ActionType::Transfer => {
 
                 vault_action.approve(&ctx.accounts.authority.key())?;
 
                 if vault_action.count_approvers() == 2 && vault_type == VaultType::TwoSig {
 
-                    let withdraw_vault_action_data = vault_action.withdraw_action()?;
+                    let withdraw_vault_action_data = vault_action.transfer_action()?;
 
                     // check that the remaining accounts passed in match
                     let accs = &mut ctx.remaining_accounts.iter();
@@ -229,7 +230,7 @@ pub mod stache {
                     // action has been executed
                     vault.remove_action(action_index);
                 }
-            },
+            }
         }
         Ok(())
     }
@@ -245,6 +246,35 @@ pub mod stache {
 
         // get rid of the vault from stache
         stache.remove_vault(ctx.accounts.vault.index);
+
+        Ok(())
+    }
+
+    /////// AUTOMATIONS ///////
+
+    /*
+    automation activation instructions: create, set trigger, set action, activate (creates thread)
+     */
+
+    pub fn create_automation(ctx: Context<CreateAutomation>, name: String) -> Result<()> {
+
+        let is_valid_name = is_valid_name(&name);
+        require!(is_valid_name, StacheError::InvalidName);
+
+        let stache = &mut ctx.accounts.stache;
+
+        // add the automation to the stache
+        let auto_index = stache.add_auto()?;
+
+        // setup the automation
+        let auto = &mut ctx.accounts.auto;
+
+        auto.stache = ctx.accounts.stache.key();
+        auto.index = auto_index;
+        auto.bump = *ctx.bumps.get("auto").unwrap();
+        auto.active = false;
+        auto.paused = true;
+        auto.name = name;
 
         Ok(())
     }
