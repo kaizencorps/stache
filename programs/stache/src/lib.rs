@@ -137,6 +137,9 @@ pub mod stache {
         // add the vault to the stache
         let vault_index = stache.add_vault()?;
 
+        // todo: if squads vault, verify squads multisig seed
+        // seeds = [b"squad", create_key.as_ref(), b"multisig"], bump
+
         // setup the vault
         let vault = &mut ctx.accounts.vault;
 
