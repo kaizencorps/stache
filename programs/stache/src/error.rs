@@ -36,5 +36,7 @@ pub enum StacheError {
     TokenAccountsMismatch,
     #[msg("Duplicate accounts passed in")]
     DupeAccount,
+    #[msg("Automation trigger account must be one of the action accounts")]
+    AutomationTriggerAccountMismatch,
 
 }

@@ -451,6 +451,11 @@ pub mod stache {
         let auto = &mut ctx.accounts.auto;
         auto.active = true;
 
+        let stache = &ctx.accounts.stache;
+
+        let trigger = auto.balance_trigger()?;
+        let action = auto.transfer_action()?;
+
         // then we configure clockwork
         if automated {
 
@@ -459,47 +464,88 @@ pub mod stache {
             require!(ctx.accounts.clockwork.is_some(), StacheError::MissingAccount);
             require!(ctx.accounts.system_program.is_some(), StacheError::MissingAccount);
 
-            /*
-            let clockwork = &ctx.accounts.clockwork;
-            let system_program = &ctx.accounts.system_program;
+            // since i'm not sure automations accept remaining accounts, just require that the trigger account is one of the to/from accounts
+            let mut use_from = true;
+            if trigger.account == action.from {
+                use_from = true;
+            } else if trigger.account == action.to {
+                use_from = false;
+            } else {
+                return Err(StacheError::AutomationTriggerAccountMismatch.into());
+            }
+
+           // hm... not sure if remaining accounts would be supported here ..?
+
+            let fire_auto_ix = Instruction {
+                program_id: ID,
+                accounts: vec![
+                    AccountMeta::new(ctx.accounts.stache.key(), false),
+                    AccountMeta::new(auto.key(), false),
+                    AccountMeta::new(ctx.accounts.thread.as_ref().unwrap().key(), true),
+                    AccountMeta::new(action.from, false),
+                    AccountMeta::new(action.to, false),
+                    AccountMeta::new_readonly(anchor_spl::token::ID, false),
+                ],
+                data: stache::instruction::FireAuto {
+                    use_ref: false,
+                    use_from,
+                }.data()
+            };
+
+            let clockwork = ctx.accounts.clockwork.as_ref().unwrap();
+            let system_program = ctx.accounts.system_program.as_ref().unwrap();
+
+            let binding = auto.index.to_le_bytes();
+            let seeds = &[
+                binding.as_ref(),
+                AUTO_SPACE.as_bytes().as_ref(),
+                stache.stacheid.as_bytes().as_ref(),
+                BEARD_SPACE.as_bytes().as_ref(),
+                stache.domain.as_ref(),
+                STACHE.as_bytes().as_ref(),
+                &[auto.bump]
+            ];
+
+            // todo: change to account trigger
+            let trigger = Trigger::Now;
 
             clockwork_sdk::cpi::thread_create(
                 CpiContext::new_with_signer(
                     clockwork.to_account_info(),
                     clockwork_sdk::cpi::ThreadCreate {
-                        authority: ctx.accounts.profile.to_account_info(),
-                        payer: ctx.accounts.signer.to_account_info(),
+                        authority: auto.to_account_info(),
+                        payer: ctx.accounts.authority.to_account_info(),
                         system_program: system_program.to_account_info(),
-                        thread: ctx.accounts.thread.to_account_info(),
+                        thread: ctx.accounts.thread.as_ref().unwrap().to_account_info(),
                     },
                     &[seeds],
                     // &[&[SEED_AUTHORITY, &[bump]]],
                 ),
+                10000000 as u64,
                 // thread id
-                automation_id.to_string().into(),
+                auto.name.clone().into(),
                 // instruction
-                hello_ix.into(),
+                vec![fire_auto_ix.into()],
                 // trigger
                 trigger
             )?;
 
-            // fund the thread a bit
+            // fund the thread a bit - seems like it's included as the new thread_creae param
+            /*
             invoke(
                 &system_instruction::transfer(
-                    ctx.accounts.signer.key,
+                    ctx.accounts.authority.key,
                     ctx.accounts.thread.key,
                     10000000 as u64
                 ),
                 &[
-                    ctx.accounts.signer.to_account_info().clone(),
-                    ctx.accounts.thread.to_account_info().clone(),
-                    ctx.accounts.system_program.to_account_info().clone(),
+                    ctx.accounts.authority.to_account_info().clone(),
+                    ctx.accounts.thread.to_ref().unwrap().to_account_info().clone(),
+                    ctx.accounts.system_program.to_ref().unwrap().to_account_info().clone(),
                 ],
             )?;
-
              */
         }
-
         Ok(())
     }
 
