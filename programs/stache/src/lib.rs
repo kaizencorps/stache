@@ -362,9 +362,6 @@ pub mod stache {
         // either thread (automation) or authority (manual) has to be present
         require!(ctx.accounts.authority.is_some() || ctx.accounts.thread.is_some(), StacheError::MissingAccount);
 
-        ////// todo: remove!
-        // let mut should_trigger = true;
-
         let mut should_trigger = false;
 
         // figure out the balance of the account we need to check
@@ -401,18 +398,21 @@ pub mod stache {
             should_trigger = true;
         }
 
-        // let from_token = &ctx.accounts.from_token;
-        // let to_token = &ctx.accounts.to_token;
+        let from_token = &ctx.accounts.from_token;
+        let to_token = &ctx.accounts.to_token;
 
-        if ctx.accounts.from_token.amount < action.amount {
-            msg!("insufficient funds to execute action. from token amount: {}, action amount: {}", ctx.accounts.from_token.amount, action.amount);
+        if from_token.amount < action.amount {
+            msg!("insufficient funds to execute action. from token amount: {}, action amount: {}", from_token.amount, action.amount);
             should_trigger = false;
         }
 
-        // require!(from_token.amount >= action.amount, StacheError::InsufficientFunds);
+        require!(from_token.amount >= action.amount, StacheError::InsufficientFunds);
+
         // if should_trigger {
         if should_trigger {
             let stache = &ctx.accounts.stache;
+
+            // todo: remove dupe code
 
             // execute the action
             let seeds = &[
@@ -426,29 +426,18 @@ pub mod stache {
             let signer = &[&seeds[..]];
 
             let cpi_accounts = Transfer {
-                from: ctx.accounts.from_token.clone().to_account_info(),
-                to: ctx.accounts.to_token.clone().to_account_info(),
-                authority: ctx.accounts.stache.to_account_info(),
+                from: from_token.to_account_info(),
+                to: to_token.to_account_info(),
+                authority: stache.to_account_info(),
             };
-
-            // msg!("executing automation. transfering {} from {} to {}", action.amount, ctx.accounts.from_token.key(), ctx.accounts.to_token.key());
-            msg!("executing automation...");
 
             let cpi_ctx = CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 cpi_accounts,
                 signer);
-
-            msg!("created cpi ctx...");
-
             token::transfer(cpi_ctx, action.amount)?;
 
-            msg!("transferred tokens...");
-
-            // msg!("executed automation! transfering {} from {} to {}", action.amount, from_token.key(), to_token.key());
-            // msg!("executed automation! transfering {} from {} to {}", action.amount, from_token.key(), to_token.key());
-            msg!("executed automation! transferred {} tokens", action.amount);
-
+            msg!("executed automation! transferred {} tokens to {}", action.amount, to_token.key());
         } else {
             msg!("automation conditions not met or insufficient funds, not executing");
         }
