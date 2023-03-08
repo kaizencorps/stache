@@ -420,10 +420,12 @@ pub struct SetAutomationAction<'info> {
     associated_token::authority = stache
     )]
     pub from_token: Option<Account<'info, TokenAccount>>,
+
     #[account(
     token::mint = mint,
     )]
     pub to_token: Option<Account<'info, TokenAccount>>,
+
     pub mint: Account<'info, Mint>,
     pub associated_token_program: Option<Program<'info, AssociatedToken>>,
 }
@@ -479,16 +481,19 @@ pub struct FireAutomation<'info> {
     #[account(mut, address = Thread::pubkey(auto.key(), auto.name.clone().into()))]
     pub thread: Option<SystemAccount<'info>>,
 
-    // for doing transfers we'll need the appropriate token accounts - but they're optional cause depends what the automation needs
+    // for doing transfers we'll need the appropriate token accounts - but normally would be optional cause depends what the automation needs but for now req'd since
+    // our only action = transfer and i don't have time to solve "instruction tries to borrow reference for an account which is already borrowed" error
 
-    pub from_token: Option<Account<'info, TokenAccount>>,
-    pub to_token: Option<Account<'info, TokenAccount>>,
-    pub token_program: Option<Program<'info, Token>>,
+    #[account(mut)]
+    pub from_token: Account<'info, TokenAccount>,
 
+    #[account(mut)]
+    pub to_token: Account<'info, TokenAccount>,
 
-    // these accounts are needed if the user fires the automation
+    pub token_program: Program<'info, Token>,
 
-    // needed if the user fires
+    // these 2 accounts are needed if the user fires the automation manually
+
     #[account(constraint = authority.is_some() && keychain.has_key(&authority.as_ref().unwrap().key()))]
     pub keychain: Option<Account<'info, CurrentKeyChain>>,
 

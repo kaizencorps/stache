@@ -65,7 +65,7 @@ impl CurrentStache {
 
         // todo: handle wrapping properly
         let mut index: u8 = *next_index;
-        if *next_index + 1 == u8::MAX {
+        if index + 1 == u8::MAX {
             *next_index = 2;
             index = 1;
         } else {

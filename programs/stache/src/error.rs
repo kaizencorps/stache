@@ -34,5 +34,7 @@ pub enum StacheError {
     MissingAccount,
     #[msg("Token accounts mismatch")]
     TokenAccountsMismatch,
+    #[msg("Duplicate accounts passed in")]
+    DupeAccount,
 
 }

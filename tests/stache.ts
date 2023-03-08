@@ -21,7 +21,7 @@ import {
   findDomainStatePda,
   findKeychainKeyPda,
   findKeychainPda,
-  findKeychainStatePda, findVaultPda
+  findKeychainStatePda, findVaultPda, findAutoPda, findThreadPda
 } from "./utils";
 import * as assert from "assert";
 import {
@@ -70,6 +70,7 @@ const renameCost = new anchor.BN(anchor.web3.LAMPORTS_PER_SOL * 0.01);
 
 const username = randomName();    // used as the keychain + stache name
 const vaultName = randomName();
+const autoName = randomName();
 const easyVaultName = randomName();
 
 
@@ -85,11 +86,13 @@ describe("stache", () => {
   let userKeychainPda: PublicKey;
   let domainPda: PublicKey;
   let mint: Keypair;
+  let stacheMintAta: PublicKey;
   let adminAta: PublicKey;
   let userAta: PublicKey;
   let stachePda: PublicKey;
   let stachePdaBump: number;
   let vaultPda: PublicKey;
+  let autoPda: PublicKey;
   let easyVaultPda: PublicKey;
   let vaultPdaBump: number;
   let vaultAta: PublicKey;
@@ -237,7 +240,7 @@ describe("stache", () => {
 
   it("basic stash/unstash", async () => {
 
-    const stacheMintAta  = getAssociatedTokenAddressSync(mint.publicKey, stachePda, true);
+    stacheMintAta  = getAssociatedTokenAddressSync(mint.publicKey, stachePda, true);
 
     // stash: this tx will create the stache's mint ata and deposit some tokens in there
     let tx = new Transaction().add(
@@ -477,6 +480,115 @@ describe("stache", () => {
     expect(vaultAtaInfo).to.be.null;
 
   });
+
+  it('creates and fires an automation', async () => {
+
+    // first vault index = 1
+    [autoPda] = findAutoPda(1, username, domainPda, stacheProgram.programId);
+
+    let txid = await stacheProgram.methods.createAutomation(autoName).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      auto: autoPda,
+      authority: provider.wallet.publicKey,
+      systemProgram: SystemProgram.programId,
+    }).rpc();
+
+    console.log(`created automation for ${username} >>>> ${autoPda} <<<< in tx: ${txid}`);
+
+    // now set the trigger
+    let stacheMintTokenBalance = await connection.getTokenAccountBalance(stacheMintAta);
+    let triggerBalance = new anchor.BN((stacheMintTokenBalance.value.uiAmount + 10) * 1e9);
+
+    console.log(`stache mint token balance: ${stacheMintTokenBalance.value.uiAmount}, trigger amount: ${stacheMintTokenBalance.value.uiAmount + 10}`);
+
+    // set the trigger to be 10 tokens more than the current balance
+    txid = await stacheProgram.methods.setAutoBalanceTrigger(triggerBalance, true).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      auto: autoPda,
+      authority: provider.wallet.publicKey,
+      token: stacheMintAta
+    }).rpc();
+
+    console.log(`set automation trigger to ${triggerBalance.toString()} in tx: ${txid}`);
+
+    // transfer 5 tokens to the vault
+    let transferAmount = new anchor.BN(5*1e9);
+
+    // set the action
+    txid = await stacheProgram.methods.setAutoAction(transferAmount).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      auto: autoPda,
+      authority: provider.wallet.publicKey,
+      fromToken: stacheMintAta,
+      toToken: easyVaultAta,
+      mint: mint.publicKey,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    }).rpc();
+
+    console.log(`set automation action to transfer ${transferAmount.toString()} from ${stacheMintAta.toString()} to ${easyVaultAta.toString()} in tx: ${txid}`);
+
+    let [threadPda, threadBump] = findThreadPda(autoName, autoPda);
+
+    // now activate the automation
+    await stacheProgram.methods.activateAuto(false).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      auto: autoPda,
+      authority: provider.wallet.publicKey,
+      // since automation = false, these aren't needed (optional)
+      thread: null,
+      clockwork: null,
+      systemProgram: null,
+    }).rpc();
+
+    console.log(`activated automation ${autoName} for ${username} >>>> ${autoPda} <<<< in tx: ${txid}`);
+
+    // now transfer some tokens to the vault
+    let tx = new Transaction().add(
+        createTransferCheckedInstruction(userAta, mint.publicKey, stacheMintAta, provider.wallet.publicKey, 15 * 1e9, 9)
+    );
+    txid = await provider.sendAndConfirm(tx)
+
+    stacheMintTokenBalance = await connection.getTokenAccountBalance(stacheMintAta);
+    console.log(`new stache mint token balance after transfer in: ${stacheMintTokenBalance.value.uiAmount}`);
+    let easyVaultMintBalance = await connection.getTokenAccountBalance(easyVaultAta);
+    console.log(`easy vault token balance after transfer in (before automation fire): ${easyVaultMintBalance.value.uiAmount}`);
+
+    // fire the automation manually
+    txid = await stacheProgram.methods.fireAuto(true, true).accounts({
+      stache: stachePda,
+      keychain: userKeychainPda,
+      auto: autoPda,
+      authority: provider.wallet.publicKey,
+      fromToken: stacheMintAta,
+      toToken: easyVaultAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+
+      // not needed since the automation flag is false
+      thread: null,
+    }).rpc();
+
+    // if the balance balance trigger account is NOT a to/from, then we pass it in this way, but since in this
+    // case it is, we don't want to pass it in twice, so we set the use_ref and use_from params (todo: cleaner way later)
+
+       /*
+        .remainingAccounts([
+        // this is the account whose balance we're checking (specified in the balance trigger)
+      {pubkey: stacheMintAta, isWritable: false, isSigner: false},
+    ]).rpc();
+        */
+
+
+    console.log(`fired automation ${autoName} for ${username} >>>> ${autoPda} <<<< in tx: ${txid}`);
+    stacheMintTokenBalance = await connection.getTokenAccountBalance(stacheMintAta);
+    console.log(`new stache mint token balance after automation fire: ${stacheMintTokenBalance.value.uiAmount}`);
+    easyVaultMintBalance = await connection.getTokenAccountBalance(easyVaultAta);
+    console.log(`easy vault token balance after automation fire: ${easyVaultMintBalance.value.uiAmount}`);
+  });
+
 
   it('destroys a vault', async () => {
 

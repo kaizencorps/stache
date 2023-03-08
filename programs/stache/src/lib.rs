@@ -61,6 +61,7 @@ pub mod stache {
         stache.next_vault_index = 1;    // we'll start at 1 and reserve 0 in case we wanna use it later
         stache.next_auto_index = 1;
         stache.vaults = Vec::with_capacity(MAX_VAULTS);
+        stache.autos = Vec::with_capacity(MAX_AUTOS);
 
         Ok(())
     }
@@ -151,7 +152,6 @@ pub mod stache {
         require!(is_valid_name, StacheError::InvalidName);
 
         let stache = &mut ctx.accounts.stache;
-
 
         // add the vault to the stache
         let vault_index = stache.add_vault()?;
@@ -322,7 +322,7 @@ pub mod stache {
     }
 
     // from = stache ata; for now just works on stache, but later can easily set up to work on vaults as well
-    pub fn set_automation_action(ctx: Context<SetAutomationAction>, amount: u64) -> Result<()> {
+    pub fn set_auto_action(ctx: Context<SetAutomationAction>, amount: u64) -> Result<()> {
         let auto = &mut ctx.accounts.auto;
 
         require!(!auto.active, StacheError::AutomationLocked);
@@ -344,8 +344,11 @@ pub mod stache {
         Ok(())
     }
 
-    // fire an automation, called by clockwork thread
-    pub fn fire_automation(ctx: Context<FireAutomation>) -> Result<()> {
+    // ok this is a bit inelegant but we don't wanna pass in the same token account twice or we'll get
+    // 'instruction tries to borrow reference for an account which is already borrowed'
+
+    // fire an automation, called by clockwork thread: needs 1 remaining account (token account to check balance)
+    pub fn fire_auto(ctx: Context<FireAutomation>, use_ref: bool, use_from: bool) -> Result<()> {
 
         let auto = &mut ctx.accounts.auto;
 
@@ -354,36 +357,60 @@ pub mod stache {
         let trigger = auto.balance_trigger()?;
 
         // since there's only 1 action/trigger, we'll always need these programs
-        require!(ctx.accounts.token_program.is_some(), StacheError::MissingAccount);
+        // require!(ctx.accounts.token_program.is_some(), StacheError::MissingAccount);
 
         // either thread (automation) or authority (manual) has to be present
         require!(ctx.accounts.authority.is_some() || ctx.accounts.thread.is_some(), StacheError::MissingAccount);
 
+        ////// todo: remove!
+        // let mut should_trigger = true;
+
         let mut should_trigger = false;
 
-        // validate conditions of the trigger
-        let accs = &mut ctx.remaining_accounts.iter();
-        let balance_check_account_info = next_account_info(accs)?.to_account_info();
+        // figure out the balance of the account we need to check
+        let balance_trigger_account_balance = if use_ref {
+            if use_from {
+                ctx.accounts.from_token.amount
+            } else {
+                ctx.accounts.to_token.amount
+            }
+        } else {
+            // then pull from the remaining accounts
+            let accs = &mut ctx.remaining_accounts.iter();
+            let balance_check_account_info = next_account_info(accs)?.to_account_info();
 
-        let account_data = &mut &**balance_check_account_info.try_borrow_mut_data()?;
-        let balance_token_account = TokenAccount::try_deserialize(account_data)?;
-        if balance_token_account.amount >= trigger.trigger_balance && trigger.above {
-            msg!("balance above trigger condition met. account balance: {}, trigger balance: {}, ", balance_token_account.amount, trigger.trigger_balance);
+            let balance_account_key = balance_check_account_info.key();
+            // check that the trigger account is the same as the account we're checking
+            require!(balance_account_key == trigger.account, StacheError::InvalidTrigger);
+
+            // and make sure it's not one of the to/from accounts
+            require!(balance_account_key != ctx.accounts.to_token.key(), StacheError::DupeAccount);
+            require!(balance_account_key != ctx.accounts.from_token.key(), StacheError::DupeAccount);
+
+            let account_data = &mut &**balance_check_account_info.try_borrow_mut_data()?;
+            let balance_token_account = TokenAccount::try_deserialize(account_data)?;
+            balance_token_account.amount
+        };
+
+        // validate conditions of the trigger - the remaining account passed in needs to be the one specified in the trigger
+        if balance_trigger_account_balance >= trigger.trigger_balance && trigger.above {
+            msg!("balance above trigger condition met. account balance: {}, trigger balance: {}, ", balance_trigger_account_balance, trigger.trigger_balance);
             should_trigger = true;
-        } else if balance_token_account.amount < trigger.trigger_balance && !trigger.above {
-            msg!("balance below trigger condition met. account balance: {}, trigger balance: {}", balance_token_account.amount, trigger.trigger_balance);
+        } else if balance_trigger_account_balance < trigger.trigger_balance && !trigger.above {
+            msg!("balance below trigger condition met. account balance: {}, trigger balance: {}", balance_trigger_account_balance, trigger.trigger_balance);
             should_trigger = true;
         }
 
-        let from_token = ctx.accounts.from_token.as_ref().unwrap();
-        let to_token = ctx.accounts.to_token.as_ref().unwrap();
+        // let from_token = &ctx.accounts.from_token;
+        // let to_token = &ctx.accounts.to_token;
 
-        if from_token.amount < action.amount {
-            msg!("insufficient funds to execute action. from token amount: {}, action amount: {}", from_token.amount, action.amount);
+        if ctx.accounts.from_token.amount < action.amount {
+            msg!("insufficient funds to execute action. from token amount: {}, action amount: {}", ctx.accounts.from_token.amount, action.amount);
             should_trigger = false;
         }
 
         // require!(from_token.amount >= action.amount, StacheError::InsufficientFunds);
+        // if should_trigger {
         if should_trigger {
             let stache = &ctx.accounts.stache;
 
@@ -398,18 +425,30 @@ pub mod stache {
 
             let signer = &[&seeds[..]];
 
-            let cpi_accouts = Transfer {
-                from: from_token.to_account_info(),
-                to: to_token.to_account_info(),
-                authority: stache.to_account_info(),
+            let cpi_accounts = Transfer {
+                from: ctx.accounts.from_token.clone().to_account_info(),
+                to: ctx.accounts.to_token.clone().to_account_info(),
+                authority: ctx.accounts.stache.to_account_info(),
             };
+
+            // msg!("executing automation. transfering {} from {} to {}", action.amount, ctx.accounts.from_token.key(), ctx.accounts.to_token.key());
+            msg!("executing automation...");
+
             let cpi_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
-                cpi_accouts,
+                ctx.accounts.token_program.to_account_info(),
+                cpi_accounts,
                 signer);
+
+            msg!("created cpi ctx...");
+
             token::transfer(cpi_ctx, action.amount)?;
 
-            msg!("executing automation. transfering {} from {} to {}", action.amount, from_token.key(), to_token.key());
+            msg!("transferred tokens...");
+
+            // msg!("executed automation! transfering {} from {} to {}", action.amount, from_token.key(), to_token.key());
+            // msg!("executed automation! transfering {} from {} to {}", action.amount, from_token.key(), to_token.key());
+            msg!("executed automation! transferred {} tokens", action.amount);
+
         } else {
             msg!("automation conditions not met or insufficient funds, not executing");
         }
@@ -418,7 +457,7 @@ pub mod stache {
     }
 
     // if automated = true, will use the trigger to configure a clockwork thread
-    pub fn activate_automation(ctx: Context<ActivateAutomation>, automated: bool) -> Result<()> {
+    pub fn activate_auto(ctx: Context<ActivateAutomation>, automated: bool) -> Result<()> {
 
         let auto = &mut ctx.accounts.auto;
         auto.active = true;

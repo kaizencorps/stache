@@ -20,7 +20,10 @@ export const KEY_SPACE = 'keys';
 export const STACHE = 'stache';
 export const BEARD_SPACE = 'beards';
 export const VAULT_SPACE = 'vaults';
+export const AUTOMATIONS_SPACE = 'automations';
 
+// devnet v2
+export const ThreadProgId = new PublicKey('CLoCKyJ6DXBJqqu2VWx9RLbgnwwR6BMHHuyasVmfMzBh');
 
 // taken from the keychain project
 
@@ -124,10 +127,10 @@ export const findKeychainKeyPda = (walletAddress: PublicKey, domain: string, key
 
 ///// stache pda finders
 
-export const findStachePda = (stacheId: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
+export const findStachePda = (stacheid: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
   return anchor.web3.PublicKey.findProgramAddressSync(
       [
-        Buffer.from(anchor.utils.bytes.utf8.encode(stacheId)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(stacheid)),
         Buffer.from(anchor.utils.bytes.utf8.encode(BEARD_SPACE)),
         domainPda.toBuffer(),
         Buffer.from(anchor.utils.bytes.utf8.encode(STACHE)),
@@ -136,12 +139,12 @@ export const findStachePda = (stacheId: string, domainPda: PublicKey, stacheprog
   );
 };
 
-export const findVaultPda = (vaultIndex: number, stacheId: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
+export const findVaultPda = (vaultIndex: number, stacheid: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
   return anchor.web3.PublicKey.findProgramAddressSync(
       [
         Buffer.from([vaultIndex]),
         Buffer.from(anchor.utils.bytes.utf8.encode(VAULT_SPACE)),
-        Buffer.from(anchor.utils.bytes.utf8.encode(stacheId)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(stacheid)),
         Buffer.from(anchor.utils.bytes.utf8.encode(BEARD_SPACE)),
         domainPda.toBuffer(),
         Buffer.from(anchor.utils.bytes.utf8.encode(STACHE)),
@@ -149,3 +152,30 @@ export const findVaultPda = (vaultIndex: number, stacheId: string, domainPda: Pu
       stacheprogid,
   );
 };
+
+export const findAutoPda = (autoIndex: number, stacheid: string, domainPda: PublicKey, stacheprogid: PublicKey): [PublicKey, number] => {
+  return anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from([autoIndex]),
+        Buffer.from(anchor.utils.bytes.utf8.encode(AUTOMATIONS_SPACE)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(stacheid)),
+        Buffer.from(anchor.utils.bytes.utf8.encode(BEARD_SPACE)),
+        domainPda.toBuffer(),
+        Buffer.from(anchor.utils.bytes.utf8.encode(STACHE)),
+      ],
+      stacheprogid,
+  );
+};
+
+// get the thread pda for the given thread id and authority (program that will get executed/owns the thread)
+export const findThreadPda = (id: string, threadAuthority: PublicKey): [PublicKey, number] => {
+  return anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode('thread')),
+        threadAuthority.toBuffer(),
+        Buffer.from(anchor.utils.bytes.utf8.encode(id)),
+      ],
+      ThreadProgId,
+  );
+
+}
