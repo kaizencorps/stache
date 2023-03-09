@@ -18,8 +18,12 @@ pub enum StacheError {
     VaultLocked,
     #[msg("Invalid action")]
     InvalidAction,
+    #[msg("Missing action")]
+    MissingAction,
     #[msg("Invalid trigger")]
     InvalidTrigger,
+    #[msg("Missing trigger")]
+    MissingTrigger,
     #[msg("Already approved")]
     AlreadyApproved,
     #[msg("Token accounts do not match")]
@@ -40,5 +44,9 @@ pub enum StacheError {
     AutomationTriggerAccountMismatch,
     #[msg("Invalid thread")]
     InvalidThread,
+    #[msg("Automation trigger limit hit")]
+    TriggerLimit,
+    #[msg("Automation execution limit hit")]
+    ExecLimit,
 
 }

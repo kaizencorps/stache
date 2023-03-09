@@ -362,6 +362,36 @@ pub struct CreateAutomation<'info> {
 }
 
 #[derive(Accounts)]
+pub struct DestroyAutomation<'info> {
+
+    #[account(
+    mut,
+    has_one = keychain,
+    )]
+    pub stache: Account<'info, CurrentStache>,
+
+    #[account(constraint = keychain.has_key(&authority.key()))]
+    pub keychain: Account<'info, CurrentKeyChain>,
+
+    #[account(
+    mut,
+    has_one = stache,
+    close = authority,
+    )]
+    pub auto: Account<'info, Auto>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    // if a thread was attached, we'll need these 2 to destroy the thread
+    #[account(mut,
+    address = Thread::pubkey(auto.key(), auto.name.clone().into()))
+    ]
+    pub thread: Option<Account<'info, Thread>>,
+    pub clockwork_program: Option<Program<'info, ThreadProgram>>,
+}
+
+#[derive(Accounts)]
 pub struct SetAutomationTrigger<'info> {
 
     #[account(
@@ -387,7 +417,6 @@ pub struct SetAutomationTrigger<'info> {
     mut,
     )]
     pub token: Option<Account<'info, TokenAccount>>,
-
 }
 
 #[derive(Accounts)]
@@ -431,7 +460,6 @@ pub struct SetAutomationAction<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(automated: bool)]
 pub struct ActivateAutomation<'info> {
 
     #[account(
@@ -458,7 +486,7 @@ pub struct ActivateAutomation<'info> {
     ]
     pub thread: SystemAccount<'info>,
 
-    pub clockwork: Program<'info, ThreadProgram>,
+    pub clockwork_program: Program<'info, ThreadProgram>,
     pub system_program: Program<'info, System>,
 }
 

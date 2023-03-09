@@ -36,6 +36,11 @@ impl CurrentStache {
         self.vaults.swap_remove(index);
     }
 
+    pub fn remove_auto(&mut self, index: u8) {
+        let index = self.is_auto(index).unwrap();
+        self.autos.swap_remove(index);
+    }
+
     // pub fn is_vault(&self, vault: &Pubkey) -> Option<usize> {
     //     match self.vaults.iter().position(|&x| &x == vault) {
     //         Some(index) => Some(index),
@@ -281,12 +286,14 @@ pub struct Auto {
     pub bump: u8,
     pub active: bool,
     pub paused: bool,
-    pub thread: Pubkey,         // clockwork thread
+    pub num_triggers: u32,      // number of times this automation was triggered
+    pub num_execs: u32,         // number of times this automation was executed (action taken)
+    pub thread: Option<Pubkey>,         // clockwork thread
     pub name: String,
-    pub action_type: ActionType,
-    pub action: Vec<u8>,       //  depends on the action type
-    pub trigger_type: TriggerType,
-    pub trigger: Vec<u8>,
+    pub action_type: Option<ActionType>,
+    pub action: Option<Vec<u8>>,       //  depends on the action type
+    pub trigger_type: Option<TriggerType>,
+    pub trigger: Option<Vec<u8>>,
 }
 
 impl Auto {
@@ -296,30 +303,44 @@ impl Auto {
         1 +         // bump
         1 +         // active
         1 +         // paused
-        32 +         // thread
+        4 +         // num_triggers
+        4 +         // num_execs
+        1 + 32 +         // thread
         32 +        // name
-        1 +         // action type
+        1 + 1 +         // action type
+        1 + 1 +         // trigger type
         128;        // should be good enough for whatever action for now
 
 
     // todo: pull into a trait / remove dupe code
 
     pub fn transfer_action(&mut self) -> Result<TransferAction> {
-        if self.action_type != ActionType::Transfer {
-            return err!(StacheError::InvalidAction);
+        if let Some(action_type) = &self.action_type {
+            if *action_type != ActionType::Transfer {
+                return err!(StacheError::InvalidAction);
+            }
+        } else {
+            return err!(StacheError::MissingAction);
         }
-        // deserialize the data into the TransferAction
-        let withdraw_data = AnchorDeserialize::deserialize(&mut self.action.as_slice()).unwrap();
-        Ok(withdraw_data)
+
+        // Deserialize the data into the TransferAction.
+        let action_slice = &mut self.action.as_mut().ok_or(StacheError::MissingAction)?.as_slice();
+        let transfer_action = AnchorDeserialize::deserialize(action_slice)?;
+        Ok(transfer_action)
     }
 
     pub fn balance_trigger(&mut self) -> Result<BalanceTrigger> {
-        if self.trigger_type != TriggerType::Balance {
-            return err!(StacheError::InvalidTrigger);
+        if let Some(trigger_type) = &self.trigger_type {
+            if *trigger_type != TriggerType::Balance {
+                return err!(StacheError::InvalidTrigger);
+            }
+        } else {
+            return err!(StacheError::MissingTrigger);
         }
         // deserialize the data into the TransferAction
-        let trigger_data = AnchorDeserialize::deserialize(&mut self.trigger.as_slice()).unwrap();
-        Ok(trigger_data)
+        let trigger_slice = &mut self.trigger.as_mut().ok_or(StacheError::MissingTrigger)?.as_slice();
+        let balance_trigger = AnchorDeserialize::deserialize(trigger_slice)?;
+        Ok(balance_trigger)
     }
 }
 

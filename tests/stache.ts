@@ -486,7 +486,7 @@ describe("stache", () => {
     // first vault index = 1
     [autoPda] = findAutoPda(1, username, domainPda, stacheProgram.programId);
 
-    let txid = await stacheProgram.methods.createAutomation(autoName).accounts({
+    let txid = await stacheProgram.methods.createAuto(autoName).accounts({
       stache: stachePda,
       keychain: userKeychainPda,
       auto: autoPda,
