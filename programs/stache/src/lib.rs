@@ -4,7 +4,9 @@ use crate::program::Stache;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, CloseAccount, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("71KtSAv6Qtpa2AZAwDhipKeoiCoyUXKbLpNheTJUGW8B");
+// declare_id!("71KtSAv6Qtpa2AZAwDhipKeoiCoyUXKbLpNheTJUGW8B");
+declare_id!("staWbEoarryYLMGxptDQKLvVMD8HqhzmBfWsAWGJQrz");
+
 
 pub mod error;
 pub mod account;
@@ -18,10 +20,28 @@ use constant::*;
 use context::*;
 use util::*;
 
+use {
+    anchor_lang::{
+        prelude::*,
+        solana_program::{instruction::Instruction, system_program}, InstructionData,
+    },
+    clockwork_sdk::{
+        ID as thread_program_ID,
+        self,
+        state::{Thread, Trigger, ThreadAccount, ThreadResponse},
+        ThreadProgram,
+    },
+};
+
 
 #[program]
 pub mod stache {
     use super::*;
+
+    use anchor_lang::solana_program::{
+        program::{invoke},
+        system_instruction,
+    };
 
     // creates the stache (beard) account
     pub fn create_stache(ctx: Context<CreateStache>) -> Result<()> {
@@ -41,7 +61,9 @@ pub mod stache {
         stache.keychain = ctx.accounts.keychain.key();
         stache.bump = *ctx.bumps.get("stache").unwrap();
         stache.next_vault_index = 1;    // we'll start at 1 and reserve 0 in case we wanna use it later
+        stache.next_auto_index = 1;
         stache.vaults = Vec::with_capacity(MAX_VAULTS);
+        stache.autos = Vec::with_capacity(MAX_AUTOS);
 
         Ok(())
     }
@@ -85,7 +107,7 @@ pub mod stache {
         let to_account = ctx.accounts.owner.to_account_info();
 
         // don't allow an unstash to close our stache account
-        if **from_account.try_borrow_lamports()? - min_rent - lamports < 0 {
+        if **from_account.try_borrow_lamports()? < min_rent + lamports {
             return Err(StacheError::InsufficientFunds.into());
         }
 
@@ -128,11 +150,10 @@ pub mod stache {
 
     pub fn create_vault(ctx: Context<CreateVault>, name: String, vault_type: VaultType) -> Result<()> {
 
-        let is_valid_name = is_valid_name(&name);
+        let is_valid_name = is_valid_name(&name, false);
         require!(is_valid_name, StacheError::InvalidName);
 
         let stache = &mut ctx.accounts.stache;
-
 
         // add the vault to the stache
         let vault_index = stache.add_vault()?;
@@ -196,14 +217,14 @@ pub mod stache {
         let vault_type = vault.vault_type.clone();
         let vault_action = vault.get_action(action_index).unwrap();
 
-        match vault_action.action {
-            VaultActionType::Withdraw => {
+        match vault_action.action_type {
+            ActionType::Transfer => {
 
                 vault_action.approve(&ctx.accounts.authority.key())?;
 
                 if vault_action.count_approvers() == 2 && vault_type == VaultType::TwoSig {
 
-                    let withdraw_vault_action_data = vault_action.withdraw_action()?;
+                    let withdraw_vault_action_data = vault_action.transfer_action()?;
 
                     // check that the remaining accounts passed in match
                     let accs = &mut ctx.remaining_accounts.iter();
@@ -229,7 +250,7 @@ pub mod stache {
                     // action has been executed
                     vault.remove_action(action_index);
                 }
-            },
+            }
         }
         Ok(())
     }
@@ -245,6 +266,373 @@ pub mod stache {
 
         // get rid of the vault from stache
         stache.remove_vault(ctx.accounts.vault.index);
+
+        Ok(())
+    }
+
+    /////// AUTOMATIONS ///////
+
+    /*
+    automation activation instructions: create, set trigger, set action, activate (creates thread)
+     */
+
+    pub fn create_auto(ctx: Context<CreateAutomation>, name: String) -> Result<()> {
+
+        let is_valid_name = is_valid_name(&name, false);
+        require!(is_valid_name, StacheError::InvalidName);
+
+        let stache = &mut ctx.accounts.stache;
+
+        // add the automation to the stache
+        let auto_index = stache.add_auto()?;
+
+        // setup the automation
+        let auto = &mut ctx.accounts.auto;
+
+        auto.stache = ctx.accounts.stache.key();
+        auto.index = auto_index;
+        auto.bump = *ctx.bumps.get("auto").unwrap();
+        auto.active = false;
+        auto.paused = true;
+        auto.name = name;
+        auto.num_execs = 0;
+        auto.num_triggers = 0;
+        auto.trigger = None;
+        auto.trigger_type = None;
+        auto.action = None;
+        auto.action_type = None;
+        auto.thread = None;
+
+        Ok(())
+    }
+
+    pub fn destroy_auto(ctx: Context<DestroyAutomation>) -> Result<()> {
+
+        let stache = &mut ctx.accounts.stache;
+
+        let auto = &mut ctx.accounts.auto;
+        if auto.thread.is_some() {
+            require!(ctx.accounts.thread.is_some(), StacheError::MissingAccount);
+            require!(ctx.accounts.clockwork_program.is_some(), StacheError::MissingAccount);
+
+            let thread = &mut ctx.accounts.thread.as_mut().unwrap();
+
+            let binding = auto.index.to_le_bytes();
+            let seeds = &[
+                binding.as_ref(),
+                AUTO_SPACE.as_bytes().as_ref(),
+                stache.stacheid.as_bytes().as_ref(),
+                BEARD_SPACE.as_bytes().as_ref(),
+                stache.domain.as_ref(),
+                STACHE.as_bytes().as_ref(),
+                &[auto.bump]
+            ];
+
+            // delete the thread
+            clockwork_sdk::cpi::thread_delete(
+                CpiContext::new_with_signer(
+                    ctx.accounts.clockwork_program.as_ref().unwrap().to_account_info(),
+                    clockwork_sdk::cpi::ThreadDelete {
+                        authority: auto.to_account_info(),
+                        close_to: ctx.accounts.authority.to_account_info(),
+                        thread: thread.to_account_info(),
+                    },
+                    &[seeds],
+                )
+            )?;
+            msg!("deleted clockwork thread {}", thread.key());
+        }
+
+        // get rid of the automation from stache
+        stache.remove_auto(auto.index);
+
+        Ok(())
+    }
+
+    pub fn set_auto_balance_trigger(ctx: Context<SetAutomationTrigger>, trigger_balance: u64, above: bool) -> Result<()> {
+        let auto = &mut ctx.accounts.auto;
+
+        require!(!auto.active, StacheError::AutomationLocked);
+
+        if ctx.accounts.token.is_none() {
+            return Err(StacheError::MissingAccount.into());
+        }
+
+        let mut token = ctx.accounts.token.as_ref().unwrap().key();
+
+        // set the trigger
+        auto.trigger_type = Some(TriggerType::Balance);
+        auto.trigger = Some(BalanceTrigger {
+            account: token,
+            trigger_balance,
+            above,
+        }.try_to_vec().unwrap());
+
+        let stache = &mut ctx.accounts.stache;
+
+        Ok(())
+    }
+
+    // from = stache ata; for now just works on stache, but later can easily set up to work on vaults as well
+    pub fn set_auto_action(ctx: Context<SetAutomationAction>, amount: u64) -> Result<()> {
+        let auto = &mut ctx.accounts.auto;
+
+        require!(!auto.active, StacheError::AutomationLocked);
+        if ctx.accounts.from_token.is_none() || ctx.accounts.to_token.is_none() || ctx.accounts.associated_token_program.is_none() {
+            return Err(StacheError::MissingAccount.into());
+        }
+
+        // this check will need to go in after we remove the constraints
+        // require!(ctx.accounts.from_token.unwrap().mint == ctx.accounts.to_token.unwrap().mint, StacheError::TokenAccountsMismatch);
+
+        // set the action
+        auto.action_type = Some(ActionType::Transfer);
+        auto.action = Some(TransferAction {
+            from: ctx.accounts.from_token.as_ref().unwrap().key(),
+            to: ctx.accounts.to_token.as_ref().unwrap().key(),
+            amount,
+        }.try_to_vec().unwrap());
+
+        Ok(())
+    }
+
+    // ok this is a bit inelegant but we don't wanna pass in the same token account twice or we'll get
+    // 'instruction tries to borrow reference for an account which is already borrowed'
+    // so use_ref needs to be true and if use_from = true, then that account will be checked for the trigger balance
+    // otherwise it'll be the to account
+
+    // fire an automation, called by clockwork thread: needs 1 remaining account (token account to check balance)
+    pub fn fire_auto(ctx: Context<FireAutomation>, use_ref: bool, use_from: bool) -> Result<()> {
+
+        let auto = &mut ctx.accounts.auto;
+
+        auto.num_triggers = auto.num_triggers.checked_add(1).ok_or(StacheError::TriggerLimit)?;
+
+        // only 1 type of action/trigger now so we can just do this
+        let action = auto.transfer_action()?;
+        let trigger = auto.balance_trigger()?;
+
+        // since there's only 1 action/trigger, we'll always need these programs
+        // require!(ctx.accounts.token_program.is_some(), StacheError::MissingAccount);
+
+        // either thread (automation) or authority (manual) has to be present
+
+        // todo: if this is a manual fire, then need to check keychain too
+        // require!(ctx.accounts.authority.is_some() || ctx.accounts.thread.is_some(), StacheError::MissingAccount);
+
+        let mut should_execute = false;
+
+        // figure out the balance of the account we need to check
+        let balance_trigger_account_balance = if use_ref {
+            if use_from {
+                ctx.accounts.from_token.amount
+            } else {
+                ctx.accounts.to_token.amount
+            }
+        } else {
+            // then pull from the remaining accounts
+            let accs = &mut ctx.remaining_accounts.iter();
+            let balance_check_account_info = next_account_info(accs)?.to_account_info();
+
+            let balance_account_key = balance_check_account_info.key();
+            // check that the trigger account is the same as the account we're checking
+            require!(balance_account_key == trigger.account, StacheError::InvalidTrigger);
+
+            // and make sure it's not one of the to/from accounts
+            require!(balance_account_key != ctx.accounts.to_token.key(), StacheError::DupeAccount);
+            require!(balance_account_key != ctx.accounts.from_token.key(), StacheError::DupeAccount);
+
+            let account_data = &mut &**balance_check_account_info.try_borrow_mut_data()?;
+            let balance_token_account = TokenAccount::try_deserialize(account_data)?;
+            balance_token_account.amount
+        };
+
+        // validate conditions of the trigger - the remaining account passed in needs to be the one specified in the trigger
+        if balance_trigger_account_balance >= trigger.trigger_balance && trigger.above {
+            msg!("balance above trigger condition met. account balance: {}, trigger balance: {}, ", balance_trigger_account_balance, trigger.trigger_balance);
+            should_execute = true;
+        } else if balance_trigger_account_balance < trigger.trigger_balance && !trigger.above {
+            msg!("balance below trigger condition met. account balance: {}, trigger balance: {}", balance_trigger_account_balance, trigger.trigger_balance);
+            should_execute = true;
+        }
+
+        let from_token = &ctx.accounts.from_token;
+        let to_token = &ctx.accounts.to_token;
+
+        if from_token.amount < action.amount {
+            msg!("insufficient funds to execute action. from token amount: {}, action amount: {}", from_token.amount, action.amount);
+            should_execute = false;
+        }
+
+        require!(from_token.amount >= action.amount, StacheError::InsufficientFunds);
+
+        // if should_trigger {
+        if should_execute {
+            let stache = &ctx.accounts.stache;
+            auto.num_execs = auto.num_execs.checked_add(1).ok_or(StacheError::ExecLimit)?;
+
+            // todo: remove dupe code
+
+            // execute the action
+            let seeds = &[
+                stache.stacheid.as_bytes().as_ref(),
+                BEARD_SPACE.as_bytes().as_ref(),
+                stache.domain.as_ref(),
+                STACHE.as_bytes().as_ref(),
+                &[stache.bump],
+            ];
+
+            let signer = &[&seeds[..]];
+
+            let cpi_accounts = Transfer {
+                from: from_token.to_account_info(),
+                to: to_token.to_account_info(),
+                authority: stache.to_account_info(),
+            };
+
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                cpi_accounts,
+                signer);
+            token::transfer(cpi_ctx, action.amount)?;
+
+            msg!("executed automation! transferred {} tokens to {}", action.amount, to_token.key());
+        } else {
+            msg!("automation conditions not met or insufficient funds, not executing");
+        }
+
+        Ok(())
+    }
+
+    // if automated = true, will use the trigger to configure a clockwork thread
+    pub fn activate_auto(ctx: Context<ActivateAutomation>) -> Result<()> {
+
+        let auto = &mut ctx.accounts.auto;
+        auto.active = true;
+        auto.thread = Some(ctx.accounts.thread.key());
+
+        let stache = &ctx.accounts.stache;
+
+        let trigger = auto.balance_trigger()?;
+        let action = auto.transfer_action()?;
+
+        // since i'm not sure automations accept remaining accounts, just require that the trigger account is one of the to/from accounts
+        let mut use_from = true;
+        if trigger.account == action.from {
+            use_from = true;
+        } else if trigger.account == action.to {
+            use_from = false;
+        } else {
+            return Err(StacheError::AutomationTriggerAccountMismatch.into());
+        }
+
+           // not sure if remaining accounts would be supported here ..?
+
+        let fire_auto_ix = Instruction {
+            program_id: ID,
+            accounts: vec![
+                AccountMeta::new(ctx.accounts.stache.key(), false),
+                AccountMeta::new(auto.key(), false),
+                AccountMeta::new(ctx.accounts.thread.key(), true),
+                AccountMeta::new(action.from, false),
+                AccountMeta::new(action.to, false),
+                AccountMeta::new_readonly(anchor_spl::token::ID, false),
+            ],
+            data: stache::instruction::FireAuto {
+                use_ref: true,
+                use_from,
+            }.data()
+        };
+
+        let clockwork = &ctx.accounts.clockwork_program;
+        let system_program = &ctx.accounts.system_program;
+
+        let binding = auto.index.to_le_bytes();
+        let seeds = &[
+            binding.as_ref(),
+            AUTO_SPACE.as_bytes().as_ref(),
+            stache.stacheid.as_bytes().as_ref(),
+            BEARD_SPACE.as_bytes().as_ref(),
+            stache.domain.as_ref(),
+            STACHE.as_bytes().as_ref(),
+            &[auto.bump]
+        ];
+
+        // todo: change to account trigger
+
+        // v2 = now
+        // let trigger = Trigger::Now;
+
+        // v1.4.2  = immediate
+        // let trigger = Trigger::Immediate;
+
+        // watch the amount of a token account
+        let trigger =
+            Trigger::Account {
+                address: trigger.account,
+                offset: 64,
+                size: 8,
+            };
+
+
+        // clockwork v2 - thread funding built in this call
+        /*
+        clockwork_sdk::cpi::thread_create(
+            CpiContext::new_with_signer(
+                clockwork.to_account_info(),
+                clockwork_sdk::cpi::ThreadCreate {
+                    authority: auto.to_account_info(),
+                    payer: ctx.accounts.authority.to_account_info(),
+                    system_program: system_program.to_account_info(),
+                    thread: ctx.accounts.thread.as_ref().unwrap().to_account_info(),
+                },
+                &[seeds],
+                // &[&[SEED_AUTHORITY, &[bump]]],
+            ),
+            10000000 as u64,
+            // thread id
+            auto.name.clone().into(),
+            // instruction
+            vec![fire_auto_ix.into()],
+            // trigger
+            trigger
+        )?;
+         */
+
+        // clockwork v1.4.2
+        clockwork_sdk::cpi::thread_create(
+            CpiContext::new_with_signer(
+                clockwork.to_account_info(),
+                clockwork_sdk::cpi::ThreadCreate {
+                    authority: auto.to_account_info(),
+                    payer: ctx.accounts.authority.to_account_info(),
+                    system_program: system_program.to_account_info(),
+                    thread: ctx.accounts.thread.to_account_info(),
+                },
+                &[seeds],
+                // &[&[SEED_AUTHORITY, &[bump]]],
+            ),
+            // thread id
+            auto.name.clone().into(),
+            // instruction
+            fire_auto_ix.into(),
+            // trigger
+            trigger
+        )?;
+
+        // fund the thread a bit
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.authority.key(),
+                &ctx.accounts.thread.key(),
+                20000000 as u64
+            ),
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.thread.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
 
         Ok(())
     }

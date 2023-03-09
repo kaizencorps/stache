@@ -18,10 +18,35 @@ pub enum StacheError {
     VaultLocked,
     #[msg("Invalid action")]
     InvalidAction,
+    #[msg("Missing action")]
+    MissingAction,
+    #[msg("Invalid trigger")]
+    InvalidTrigger,
+    #[msg("Missing trigger")]
+    MissingTrigger,
     #[msg("Already approved")]
     AlreadyApproved,
     #[msg("Token accounts do not match")]
     NonMatchingTokenAccounts,
-    #[msg("Invalid vault action")]
-    InvalidVaultAction
+    #[msg("Automation limit hit")]
+    MaxAutos,
+    #[msg("Hit limit")]
+    HitLimit,
+    #[msg("Automation can't be modified")]
+    AutomationLocked,
+    #[msg("Missing an expected account")]
+    MissingAccount,
+    #[msg("Token accounts mismatch")]
+    TokenAccountsMismatch,
+    #[msg("Duplicate accounts passed in")]
+    DupeAccount,
+    #[msg("Automation trigger account must be one of the action accounts")]
+    AutomationTriggerAccountMismatch,
+    #[msg("Invalid thread")]
+    InvalidThread,
+    #[msg("Automation trigger limit hit")]
+    TriggerLimit,
+    #[msg("Automation execution limit hit")]
+    ExecLimit,
+
 }

@@ -6,10 +6,15 @@ pub const MAX_SUBMITTERS: usize = 3;
 pub const MAX_APPROVERS: usize = 3;
 pub const MAX_VAULTS: usize = 5;
 pub const MAX_VAULT_ACTIONS: usize = 5;
+pub const MAX_AUTOS: usize = 5;
 
 // the space for beards (staches)
 pub const BEARD_SPACE: &str = "beards";
 
 //  the space for stache vaults
 pub const VAULT_SPACE: &str = "vaults";
+
+// the space for stache automations
+pub const AUTO_SPACE: &str = "automations";
+
 
