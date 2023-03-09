@@ -105,7 +105,7 @@ pub mod stache {
         let to_account = ctx.accounts.owner.to_account_info();
 
         // don't allow an unstash to close our stache account
-        if **from_account.try_borrow_lamports()? - min_rent - lamports < 0 {
+        if **from_account.try_borrow_lamports()? < min_rent + lamports {
             return Err(StacheError::InsufficientFunds.into());
         }
 
@@ -346,6 +346,8 @@ pub mod stache {
 
     // ok this is a bit inelegant but we don't wanna pass in the same token account twice or we'll get
     // 'instruction tries to borrow reference for an account which is already borrowed'
+    // so use_ref needs to be true and if use_from = true, then that account will be checked for the trigger balance
+    // otherwise it'll be the to account
 
     // fire an automation, called by clockwork thread: needs 1 remaining account (token account to check balance)
     pub fn fire_auto(ctx: Context<FireAutomation>, use_ref: bool, use_from: bool) -> Result<()> {
@@ -360,7 +362,9 @@ pub mod stache {
         // require!(ctx.accounts.token_program.is_some(), StacheError::MissingAccount);
 
         // either thread (automation) or authority (manual) has to be present
-        require!(ctx.accounts.authority.is_some() || ctx.accounts.thread.is_some(), StacheError::MissingAccount);
+
+        // todo: if this is a manual fire, then need to check keychain too
+        // require!(ctx.accounts.authority.is_some() || ctx.accounts.thread.is_some(), StacheError::MissingAccount);
 
         let mut should_trigger = false;
 
@@ -446,7 +450,7 @@ pub mod stache {
     }
 
     // if automated = true, will use the trigger to configure a clockwork thread
-    pub fn activate_auto(ctx: Context<ActivateAutomation>, automated: bool) -> Result<()> {
+    pub fn activate_auto(ctx: Context<ActivateAutomation>) -> Result<()> {
 
         let auto = &mut ctx.accounts.auto;
         auto.active = true;
@@ -456,96 +460,124 @@ pub mod stache {
         let trigger = auto.balance_trigger()?;
         let action = auto.transfer_action()?;
 
-        // then we configure clockwork
-        if automated {
+        // since i'm not sure automations accept remaining accounts, just require that the trigger account is one of the to/from accounts
+        let mut use_from = true;
+        if trigger.account == action.from {
+            use_from = true;
+        } else if trigger.account == action.to {
+            use_from = false;
+        } else {
+            return Err(StacheError::AutomationTriggerAccountMismatch.into());
+        }
 
-            // then these accounts need to have been passed in
-            require!(ctx.accounts.thread.is_some(), StacheError::MissingAccount);
-            require!(ctx.accounts.clockwork.is_some(), StacheError::MissingAccount);
-            require!(ctx.accounts.system_program.is_some(), StacheError::MissingAccount);
+           // not sure if remaining accounts would be supported here ..?
 
-            // since i'm not sure automations accept remaining accounts, just require that the trigger account is one of the to/from accounts
-            let mut use_from = true;
-            if trigger.account == action.from {
-                use_from = true;
-            } else if trigger.account == action.to {
-                use_from = false;
-            } else {
-                return Err(StacheError::AutomationTriggerAccountMismatch.into());
-            }
+        let fire_auto_ix = Instruction {
+            program_id: ID,
+            accounts: vec![
+                AccountMeta::new(ctx.accounts.stache.key(), false),
+                AccountMeta::new(auto.key(), false),
+                AccountMeta::new(ctx.accounts.thread.key(), true),
+                AccountMeta::new(action.from, false),
+                AccountMeta::new(action.to, false),
+                AccountMeta::new_readonly(anchor_spl::token::ID, false),
+            ],
+            data: stache::instruction::FireAuto {
+                use_ref: true,
+                use_from,
+            }.data()
+        };
 
-           // hm... not sure if remaining accounts would be supported here ..?
+        let clockwork = &ctx.accounts.clockwork;
+        let system_program = &ctx.accounts.system_program;
 
-            let fire_auto_ix = Instruction {
-                program_id: ID,
-                accounts: vec![
-                    AccountMeta::new(ctx.accounts.stache.key(), false),
-                    AccountMeta::new(auto.key(), false),
-                    AccountMeta::new(ctx.accounts.thread.as_ref().unwrap().key(), true),
-                    AccountMeta::new(action.from, false),
-                    AccountMeta::new(action.to, false),
-                    AccountMeta::new_readonly(anchor_spl::token::ID, false),
-                ],
-                data: stache::instruction::FireAuto {
-                    use_ref: false,
-                    use_from,
-                }.data()
+        let binding = auto.index.to_le_bytes();
+        let seeds = &[
+            binding.as_ref(),
+            AUTO_SPACE.as_bytes().as_ref(),
+            stache.stacheid.as_bytes().as_ref(),
+            BEARD_SPACE.as_bytes().as_ref(),
+            stache.domain.as_ref(),
+            STACHE.as_bytes().as_ref(),
+            &[auto.bump]
+        ];
+
+        // todo: change to account trigger
+
+        // v2 = now
+        // let trigger = Trigger::Now;
+
+        // v1.4.2  = immediate
+        // let trigger = Trigger::Immediate;
+
+        // watch the amount of a token account
+        let trigger =
+            Trigger::Account {
+                address: trigger.account,
+                offset: 64,
+                size: 8,
             };
 
-            let clockwork = ctx.accounts.clockwork.as_ref().unwrap();
-            let system_program = ctx.accounts.system_program.as_ref().unwrap();
 
-            let binding = auto.index.to_le_bytes();
-            let seeds = &[
-                binding.as_ref(),
-                AUTO_SPACE.as_bytes().as_ref(),
-                stache.stacheid.as_bytes().as_ref(),
-                BEARD_SPACE.as_bytes().as_ref(),
-                stache.domain.as_ref(),
-                STACHE.as_bytes().as_ref(),
-                &[auto.bump]
-            ];
+        // clockwork v2 - thread funding built in this call
+        /*
+        clockwork_sdk::cpi::thread_create(
+            CpiContext::new_with_signer(
+                clockwork.to_account_info(),
+                clockwork_sdk::cpi::ThreadCreate {
+                    authority: auto.to_account_info(),
+                    payer: ctx.accounts.authority.to_account_info(),
+                    system_program: system_program.to_account_info(),
+                    thread: ctx.accounts.thread.as_ref().unwrap().to_account_info(),
+                },
+                &[seeds],
+                // &[&[SEED_AUTHORITY, &[bump]]],
+            ),
+            10000000 as u64,
+            // thread id
+            auto.name.clone().into(),
+            // instruction
+            vec![fire_auto_ix.into()],
+            // trigger
+            trigger
+        )?;
+         */
 
-            // todo: change to account trigger
-            let trigger = Trigger::Now;
+        // clockwork v1.4.2
+        clockwork_sdk::cpi::thread_create(
+            CpiContext::new_with_signer(
+                clockwork.to_account_info(),
+                clockwork_sdk::cpi::ThreadCreate {
+                    authority: auto.to_account_info(),
+                    payer: ctx.accounts.authority.to_account_info(),
+                    system_program: system_program.to_account_info(),
+                    thread: ctx.accounts.thread.to_account_info(),
+                },
+                &[seeds],
+                // &[&[SEED_AUTHORITY, &[bump]]],
+            ),
+            // thread id
+            auto.name.clone().into(),
+            // instruction
+            fire_auto_ix.into(),
+            // trigger
+            trigger
+        )?;
 
-            clockwork_sdk::cpi::thread_create(
-                CpiContext::new_with_signer(
-                    clockwork.to_account_info(),
-                    clockwork_sdk::cpi::ThreadCreate {
-                        authority: auto.to_account_info(),
-                        payer: ctx.accounts.authority.to_account_info(),
-                        system_program: system_program.to_account_info(),
-                        thread: ctx.accounts.thread.as_ref().unwrap().to_account_info(),
-                    },
-                    &[seeds],
-                    // &[&[SEED_AUTHORITY, &[bump]]],
-                ),
-                10000000 as u64,
-                // thread id
-                auto.name.clone().into(),
-                // instruction
-                vec![fire_auto_ix.into()],
-                // trigger
-                trigger
-            )?;
+        // fund the thread a bit
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.authority.key(),
+                &ctx.accounts.thread.key(),
+                10000000 as u64
+            ),
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.thread.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
 
-            // fund the thread a bit - seems like it's included as the new thread_creae param
-            /*
-            invoke(
-                &system_instruction::transfer(
-                    ctx.accounts.authority.key,
-                    ctx.accounts.thread.key,
-                    10000000 as u64
-                ),
-                &[
-                    ctx.accounts.authority.to_account_info().clone(),
-                    ctx.accounts.thread.to_ref().unwrap().to_account_info().clone(),
-                    ctx.accounts.system_program.to_ref().unwrap().to_account_info().clone(),
-                ],
-            )?;
-             */
-        }
         Ok(())
     }
 

@@ -532,13 +532,15 @@ describe("stache", () => {
 
     let [threadPda, threadBump] = findThreadPda(autoName, autoPda);
 
-    // now activate the automation
-    await stacheProgram.methods.activateAuto(false).accounts({
+    // now activate the automation - needs to be on devnet for automation
+
+    /*
+    await stacheProgram.methods.activateAuto().accounts({
       stache: stachePda,
       keychain: userKeychainPda,
       auto: autoPda,
       authority: provider.wallet.publicKey,
-      // since automation = false, these aren't needed (optional)
+      // these are needed
       thread: null,
       clockwork: null,
       systemProgram: null,
@@ -570,6 +572,7 @@ describe("stache", () => {
       // not needed since the automation flag is false
       thread: null,
     }).rpc();
+     */
 
     // if the balance balance trigger account is NOT a to/from, then we pass it in this way, but since in this
     // case it is, we don't want to pass it in twice, so we set the use_ref and use_from params (todo: cleaner way later)
@@ -579,7 +582,6 @@ describe("stache", () => {
         // this is the account whose balance we're checking (specified in the balance trigger)
       {pubkey: stacheMintAta, isWritable: false, isSigner: false},
     ]).rpc();
-        */
 
 
     console.log(`fired automation ${autoName} for ${username} >>>> ${autoPda} <<<< in tx: ${txid}`);
@@ -587,6 +589,7 @@ describe("stache", () => {
     console.log(`new stache mint token balance after automation fire: ${stacheMintTokenBalance.value.uiAmount}`);
     easyVaultMintBalance = await connection.getTokenAccountBalance(easyVaultAta);
     console.log(`easy vault token balance after automation fire: ${easyVaultMintBalance.value.uiAmount}`);
+        */
   });
 
 

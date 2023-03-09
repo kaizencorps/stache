@@ -38,5 +38,7 @@ pub enum StacheError {
     DupeAccount,
     #[msg("Automation trigger account must be one of the action accounts")]
     AutomationTriggerAccountMismatch,
+    #[msg("Invalid thread")]
+    InvalidThread,
 
 }

@@ -456,10 +456,10 @@ pub struct ActivateAutomation<'info> {
     #[account(mut,
         address = Thread::pubkey(auto.key(), auto.name.clone().into()))
     ]
-    pub thread: Option<SystemAccount<'info>>,
+    pub thread: SystemAccount<'info>,
 
-    pub clockwork: Option<Program<'info, ThreadProgram>>,
-    pub system_program: Option<Program<'info, System>>,
+    pub clockwork: Program<'info, ThreadProgram>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -467,7 +467,6 @@ pub struct FireAutomation<'info> {
 
     #[account(
     mut,
-    has_one = keychain,
     )]
     pub stache: Account<'info, CurrentStache>,
 
@@ -478,8 +477,13 @@ pub struct FireAutomation<'info> {
     pub auto: Account<'info, Auto>,
 
     // the clockwork thread account - optional in case the user wants to test the automation outside of clockwork
-    #[account(mut, address = Thread::pubkey(auto.key(), auto.name.clone().into()))]
-    pub thread: Option<SystemAccount<'info>>,
+    #[account(
+    mut,
+    signer,
+    constraint = thread.authority.eq(&auto.key()) @StacheError::InvalidThread,
+    address = Thread::pubkey(auto.key(), auto.name.clone().into()))
+    ]
+    pub thread: Account<'info, Thread>,
 
     // for doing transfers we'll need the appropriate token accounts - but normally would be optional cause depends what the automation needs but for now req'd since
     // our only action = transfer and i don't have time to solve "instruction tries to borrow reference for an account which is already borrowed" error
@@ -491,17 +495,5 @@ pub struct FireAutomation<'info> {
     pub to_token: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
-
-    // these 2 accounts are needed if the user fires the automation manually
-
-    #[account(constraint = authority.is_some() && keychain.has_key(&authority.as_ref().unwrap().key()))]
-    pub keychain: Option<Account<'info, CurrentKeyChain>>,
-
-    // this is here for testing the method outside of clockwork, but might be useful for the user to test
-    #[account(mut)]
-    pub authority: Option<Signer<'info>>,
-
-
-
 
 }
