@@ -53,10 +53,24 @@ are set up in the Keychain program (https://github.com/kaizencorps/keychain).
 
 A user accesses his Stache via a single Stache-linked wallet, the same way he'd connect to any existing dapp. From here, the user is able to control assets in the Stache and 
 in the connected wallet. This means he can deposit assets from his connected wallet into the Stache, and he can withdraw assets
-from the Stache. He CAN NOT, however, control assets in other linked wallets.
+from the Stache. 
 
 This happens with the wallet that initially created the Stache, or a wallet that an already-linked wallet added to the Stache,
 and which was subsequently verified via a transaction submitted to the Stache by the added wallet.
+
+# Technicals
+
+Stache works in conjunction with Keychain, as Keychain is used to store the linked wallets, which are then verified
+by Stache during usage. In order to create a Stache account, the Keychain account needs to be created first. 
+
+To run the test suite, you'll need to first deploy Keychain to your localnet,
+and then deploy Stache. To build Stache, you'll also need to have checked out and built Keychain in a sibling directory
+(notice the reference in the Cargo.toml file).
+
+Once those 2 programs are deployed, you'll need to update/verify Keychain's address in the idl/keychain.json file. Then you 
+can run the test suite with the command: 
+
+```anchor test --provider.cluster localnet --skip-local-validator```
 
 # v1
 For the initial version of Stache (v1), the focus will be limited to the user’s direct experience and interaction with
@@ -65,10 +79,11 @@ but will be a secondary goal.
 
 # Disclaimer
 
-This code is unaudited and currently under heavy development. It's not even close to being production-ready, and due to the 
-nature of it, is intentionally not deployed on mainnet yet. Use at your own risk. An immutable version probably won't be deployed for some time.
+This code is unaudited, written very rapidly for Grizzlython without much concern for security, and is under heavy development. 
+It's not even close to being production-ready, and due to the nature of it, is intentionally not yet deployed on mainnet. 
+Use at your own risk.
 
-The initial version for the Grizzlython hackathon is deployed on devenet, but is meant to serve as a proof of concept and
+The initial version for the Grizzlython hackathon is deployed on devnet, but is meant to serve as a proof of concept and
 demonstration of the concepts presented here and in the presentation. Wrt security, the program probably  
 has the resemblence of swiss cheese.
 
