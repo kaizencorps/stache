@@ -67,10 +67,12 @@ To run the test suite, you'll need to first deploy Keychain to your localnet,
 and then deploy Stache. To build Stache, you'll also need to have checked out and built Keychain in a sibling directory
 (notice the reference in the Cargo.toml file).
 
-Once those 2 programs are deployed, you'll need to update/verify Keychain's address in the idl/keychain.json file. Then you 
+Once those 2 programs are deployed to local running test validator, you'll need to update/verify Keychain's address in 
+the idl/keychain.json file before you can run the tests. Then, with your test validator running, you 
 can run the test suite with the command: 
 
 ```anchor test --provider.cluster localnet --skip-local-validator```
+
 
 # v1
 For the initial version of Stache (v1), the focus will be limited to the user’s direct experience and interaction with
